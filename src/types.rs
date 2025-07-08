@@ -2,6 +2,19 @@ use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 
 #[derive(Debug, Clone)]
+pub struct Instrument {
+    pub symbol: String,
+    pub tick_size: Decimal,
+    pub base_currency: String,
+    pub multiplier: i32,
+    pub minimum_trade_quantity: i32,
+    pub description: String,
+    pub product_id: String,
+    pub state: String,
+    pub price_scale: i32,
+}
+
+#[derive(Debug, Clone)]
 pub struct PlaceOrder {
     pub symbol: String,
     pub side: String,

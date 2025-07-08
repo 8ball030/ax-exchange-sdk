@@ -45,11 +45,19 @@ impl ArchitectX {
         method: Method,
         path: &str,
         body: Option<B>,
+        use_token: bool,
     ) -> Result<R> {
         let url = self.base_url.join(path)?;
         let mut req = self.rest_client.request(method, url.clone());
         if let Some(body) = body {
             req = req.body(body);
+        }
+        if use_token {
+            let maybe_token = self.user_token.load();
+            if let Some(token) = &*maybe_token {
+                let (token, _) = &**token;
+                req = req.header("Authorization", format!("{token}"));
+            }
         }
         let res = req.send().await?;
         if res.status().is_success() {
@@ -105,8 +113,30 @@ impl ArchitectX {
         };
         let req = serde_json::to_string(&req)?;
         let res: protocol::auth_gateway::GetUserTokenResponse =
-            self.request(Method::POST, "auth/get_user_token", Some(req)).await?;
+            self.request(Method::POST, "auth/get_user_token", Some(req), false).await?;
         Ok(res.token)
+    }
+
+    pub async fn get_instrument(&self, symbol: impl AsRef<str>) -> Result<Instrument> {
+        let res: protocol::auth_gateway::GetInstrumentResponse = self
+            .request(
+                Method::GET,
+                &format!("auth/instruments/{}", symbol.as_ref()),
+                None::<&str>,
+                true,
+            )
+            .await?;
+        Ok(Instrument {
+            symbol: res.symbol,
+            tick_size: res.tick_size,
+            base_currency: res.base_currency,
+            multiplier: res.multiplier,
+            minimum_trade_quantity: res.minimum_trade_quantity,
+            description: res.description,
+            product_id: res.product_id,
+            state: res.state,
+            price_scale: res.price_scale,
+        })
     }
 
     pub async fn marketdata_client(&self) -> Result<MarketdataClient> {
@@ -332,7 +362,7 @@ impl OrderGatewayClient {
             _ => bail!("invalid url scheme"),
         };
         res.map_err(|_| anyhow!("invalid url scheme"))?;
-        let order_gateway_url = ws_base_url.join("orders_new/ws/orders")?.to_string();
+        let order_gateway_url = ws_base_url.join("orders/ws")?.to_string();
 
         // connect to order gateway
         info!("connecting to {order_gateway_url}");
