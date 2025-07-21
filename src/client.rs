@@ -140,7 +140,10 @@ impl ArchitectX {
     }
 
     pub async fn marketdata_client(&self) -> Result<MarketdataClient> {
-        MarketdataClient::connect(self.base_url.clone()).await
+        let username =
+            self.username.as_ref().ok_or_else(|| anyhow!("no username provided"))?;
+        let token = self.refresh_user_token(false).await?;
+        MarketdataClient::connect(self.base_url.clone(), username, token).await
     }
 
     pub async fn order_gateway_client(&self) -> Result<OrderGatewayClient> {
@@ -214,7 +217,11 @@ pub struct MarketdataClient {
 }
 
 impl MarketdataClient {
-    pub async fn connect(base_url: Url) -> Result<Self> {
+    pub async fn connect(
+        base_url: Url,
+        username: impl AsRef<str>,
+        token: impl AsRef<str>,
+    ) -> Result<Self> {
         // derive ws url
         let mut ws_base_url = base_url.clone();
         let res = match base_url.scheme() {
@@ -223,11 +230,22 @@ impl MarketdataClient {
             _ => bail!("invalid url scheme"),
         };
         res.map_err(|_| anyhow!("invalid url scheme"))?;
-        let md_url = ws_base_url.join("md/ws/md")?.to_string();
+        let md_url = ws_base_url.join("md/ws")?.to_string();
 
-        // connect to order gateway
+        // connect to market data publisher
         info!("connecting to {md_url}");
-        let (ws, _) = connect_async(md_url).await?;
+        let (mut ws, _) = connect_async(md_url).await?;
+
+        // send login request
+        let req = json!({
+            "request_id": 1,
+            "type": "login",
+            "username": username.as_ref().to_string(),
+            "token": token.as_ref().to_string(),
+        });
+        let payload = serde_json::to_string(&req)?;
+        info!("sending login request: {payload}");
+        ws.send(Message::Text(payload.into())).await?;
 
         Ok(Self { ws, next_request_id: 1, orderbooks: HashMap::new() })
     }
