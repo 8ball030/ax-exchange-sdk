@@ -36,8 +36,10 @@ impl ArchitectX {
                 .join("auth/")
                 .unwrap_or(base_url.clone())
                 .to_string(),
-            admin_secret_key: std::env::var("DECODE_TOKEN_SECRET_KEY")
-                .expect("DECODE_TOKEN_SECRET_KEY environment variable must be set"),
+            admin_secret_key: match std::env::var("DECODE_TOKEN_SECRET_KEY") {
+                Ok(key) => Some(key),
+                Err(_) => None,
+            },
             timeout_seconds: 10,
             max_retries: 3,
             pool_max_idle_per_host: 10,
