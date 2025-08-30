@@ -42,7 +42,9 @@ impl std::fmt::Display for Error {
             f,
             "code: {}, message: {}",
             self.code,
-            self.message.as_ref().unwrap_or(&"unknown error".to_string())
+            self.message
+                .as_ref()
+                .unwrap_or(&"unknown error".to_string())
         )
     }
 }

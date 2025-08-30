@@ -2,6 +2,7 @@ use crate::{protocol, types::*};
 use anyhow::{anyhow, bail, Result};
 use arc_swap::ArcSwapOption;
 use arcstr::ArcStr;
+use auth_gateway::{AuthGatewayClient, AuthGatewayConfig};
 use chrono::{DateTime, Utc};
 use futures::{SinkExt, StreamExt};
 use log::{debug, error, info, trace, warn};
@@ -14,11 +15,8 @@ use std::{
     time::Duration,
 };
 use tokio::net::TcpStream;
-use tokio_tungstenite::{
-    connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream,
-};
+use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
 use url::Url;
-use auth_gateway::{AuthGatewayClient, AuthGatewayConfig};
 
 #[derive(Clone)]
 pub struct ArchitectX {
@@ -34,17 +32,20 @@ impl ArchitectX {
     pub fn new(base_url: Url, username: Option<&str>, password: Option<&str>) -> Self {
         // Create auth-gateway client configuration
         let auth_config = AuthGatewayConfig {
-            base_url: base_url.join("auth/").unwrap_or(base_url.clone()).to_string(),
+            base_url: base_url
+                .join("auth/")
+                .unwrap_or(base_url.clone())
+                .to_string(),
             admin_secret_key: std::env::var("DECODE_TOKEN_SECRET_KEY")
                 .expect("DECODE_TOKEN_SECRET_KEY environment variable must be set"),
             timeout_seconds: 10,
             max_retries: 3,
             pool_max_idle_per_host: 10,
         };
-        
-        let auth_client = AuthGatewayClient::new(auth_config)
-            .expect("Failed to create auth-gateway client");
-        
+
+        let auth_client =
+            AuthGatewayClient::new(auth_config).expect("Failed to create auth-gateway client");
+
         Self {
             base_url,
             auth_client: Arc::new(auth_client),
@@ -63,17 +64,19 @@ impl ArchitectX {
                 return Ok(token.clone());
             }
         }
-        let username =
-            self.username.as_ref().ok_or_else(|| anyhow!("no username provided"))?;
-        let password =
-            self.password.as_ref().ok_or_else(|| anyhow!("no password provided"))?;
+        let username = self
+            .username
+            .as_ref()
+            .ok_or_else(|| anyhow!("no username provided"))?;
+        let password = self
+            .password
+            .as_ref()
+            .ok_or_else(|| anyhow!("no password provided"))?;
         let token = self.get_user_token(username, password, 3600).await?;
         let token = ArcStr::from(token);
         self.user_token.store(Some(Arc::new((
             token.clone(),
-            now + chrono::Duration::seconds(
-                3300, /* one hour, less 5 minutes buffer */
-            ),
+            now + chrono::Duration::seconds(3300 /* one hour, less 5 minutes buffer */),
         ))));
         Ok(token)
     }
@@ -84,20 +87,30 @@ impl ArchitectX {
         password: impl AsRef<str>,
         expiration_seconds: i32,
     ) -> Result<String> {
-        self.auth_client.get_user_token(username.as_ref(), password.as_ref(), expiration_seconds as u64).await
+        self.auth_client
+            .get_user_token(
+                username.as_ref(),
+                password.as_ref(),
+                expiration_seconds as u64,
+            )
+            .await
             .map_err(|e| anyhow!("Failed to get user token: {}", e))
     }
 
     pub async fn get_instrument(&self, symbol: impl AsRef<str>) -> Result<Instrument> {
         let token = self.refresh_user_token(false).await?;
-        let instruments = self.auth_client.get_instruments(&token).await
+        let instruments = self
+            .auth_client
+            .get_instruments(&token)
+            .await
             .map_err(|e| anyhow!("Failed to get instruments: {}", e))?;
-        
+
         let symbol_str = symbol.as_ref();
-        let auth_instrument = instruments.into_iter()
+        let auth_instrument = instruments
+            .into_iter()
             .find(|i| i.symbol == symbol_str)
             .ok_or_else(|| anyhow!("Instrument not found: {}", symbol_str))?;
-        
+
         Ok(Instrument {
             symbol: auth_instrument.symbol,
             tick_size: auth_instrument.tick_size,
@@ -107,40 +120,44 @@ impl ArchitectX {
             description: auth_instrument.description,
             product_id: auth_instrument.product_id,
             state: auth_instrument.state,
-            price_scale: auth_instrument.price_scale.to_string().parse::<i32>().unwrap_or(1),
+            price_scale: auth_instrument
+                .price_scale
+                .to_string()
+                .parse::<i32>()
+                .unwrap_or(1),
         })
     }
 
     pub async fn marketdata_client(&self) -> Result<MarketdataClient> {
-        let username =
-            self.username.as_ref().ok_or_else(|| anyhow!("no username provided"))?;
+        let username = self
+            .username
+            .as_ref()
+            .ok_or_else(|| anyhow!("no username provided"))?;
         let token = self.refresh_user_token(false).await?;
         MarketdataClient::connect(self.base_url.clone(), username, token).await
     }
 
     pub async fn order_gateway_client(&self) -> Result<OrderGatewayClient> {
-        let username =
-            self.username.as_ref().ok_or_else(|| anyhow!("no username provided"))?;
+        let username = self
+            .username
+            .as_ref()
+            .ok_or_else(|| anyhow!("no username provided"))?;
         let token = self.refresh_user_token(false).await?;
         OrderGatewayClient::connect(self.base_url.clone(), username, token).await
     }
 
     pub async fn order_gateway_rest_client(&self) -> Result<OrderGatewayRestClient> {
-        let username =
-            self.username.as_ref().ok_or_else(|| anyhow!("no username provided"))?;
-        OrderGatewayRestClient::connect(
-            self.base_url.clone(),
-            username,
-            self.user_token.clone(),
-        ).await
+        let username = self
+            .username
+            .as_ref()
+            .ok_or_else(|| anyhow!("no username provided"))?;
+        OrderGatewayRestClient::connect(self.base_url.clone(), username, self.user_token.clone())
+            .await
     }
 
     pub async fn account_gateway_client(&self) -> Result<AccountGatewayClient> {
         let account_base_url = self.base_url.join("account/")?;
-        AccountGatewayClient::connect(
-            account_base_url,
-            self.user_token.clone(),
-        ).await
+        AccountGatewayClient::connect(account_base_url, self.user_token.clone()).await
     }
 
     /// Get extended auth gateway client for API key management
@@ -175,7 +192,6 @@ impl ArchitectX {
             self.user_token.clone(),
         ))
     }
-
 }
 
 pub struct Orderbook {
@@ -195,13 +211,19 @@ impl From<&protocol::marketdata_publisher::L2BookUpdate> for Orderbook {
         for l in &u.bids {
             bids.insert(
                 l.price,
-                OrderbookLevel { quantity: l.quantity, order_quantities: None },
+                OrderbookLevel {
+                    quantity: l.quantity,
+                    order_quantities: None,
+                },
             );
         }
         for l in &u.asks {
             asks.insert(
                 l.price,
-                OrderbookLevel { quantity: l.quantity, order_quantities: None },
+                OrderbookLevel {
+                    quantity: l.quantity,
+                    order_quantities: None,
+                },
             );
         }
         Self { bids, asks }
@@ -271,20 +293,27 @@ impl MarketdataClient {
         info!("sending login request: {payload}");
         ws.send(Message::Text(payload.into())).await?;
 
-        Ok(Self { ws, next_request_id: 1, orderbooks: HashMap::new() })
+        Ok(Self {
+            ws,
+            next_request_id: 1,
+            orderbooks: HashMap::new(),
+        })
     }
 
     pub async fn next(
         &mut self,
     ) -> Result<Option<Arc<protocol::marketdata_publisher::MarketdataEvent>>> {
-        let msg = self.ws.next().await.ok_or_else(|| anyhow!("ws stream ended"))??;
+        let msg = self
+            .ws
+            .next()
+            .await
+            .ok_or_else(|| anyhow!("ws stream ended"))??;
         match msg {
             Message::Text(text) => {
                 trace!("decoding marketdata message: {text}");
-                match serde_json::from_str::<
-                    protocol::ws::Response<Box<serde_json::value::RawValue>>,
-                >(&text)
-                {
+                match serde_json::from_str::<protocol::ws::Response<Box<serde_json::value::RawValue>>>(
+                    &text,
+                ) {
                     Ok(_r) => {
                         // TODO: do something
                     }
@@ -299,7 +328,9 @@ impl MarketdataClient {
                             }
                             Err(e_as_event) => {
                                 error!("decoding marketdata message as event: {e_as_event:?}");
-                                error!("decoding marketdata message as response: {e_as_response:?}");
+                                error!(
+                                    "decoding marketdata message as response: {e_as_response:?}"
+                                );
                                 return Ok(None);
                             }
                         }
@@ -309,18 +340,12 @@ impl MarketdataClient {
             Message::Ping(..) => {
                 trace!("ws ping received");
             }
-            Message::Binary(..)
-            | Message::Frame(..)
-            | Message::Pong(..)
-            | Message::Close(..) => {}
+            Message::Binary(..) | Message::Frame(..) | Message::Pong(..) | Message::Close(..) => {}
         }
         Ok(None)
     }
 
-    fn handle_event(
-        &mut self,
-        e: &protocol::marketdata_publisher::MarketdataEvent,
-    ) -> Result<()> {
+    fn handle_event(&mut self, e: &protocol::marketdata_publisher::MarketdataEvent) -> Result<()> {
         use protocol::marketdata_publisher::*;
         trace!("marketdata event: {e:?}");
         match e {
@@ -430,34 +455,36 @@ impl OrderGatewayClient {
         })
     }
 
-    pub async fn next(
-        &mut self,
-    ) -> Result<Option<protocol::order_gateway::OrderGatewayEvent>> {
-        let msg = self.ws.next().await.ok_or_else(|| anyhow!("ws stream ended"))??;
+    pub async fn next(&mut self) -> Result<Option<protocol::order_gateway::OrderGatewayEvent>> {
+        let msg = self
+            .ws
+            .next()
+            .await
+            .ok_or_else(|| anyhow!("ws stream ended"))??;
         match msg {
             Message::Text(text) => {
                 trace!("decoding order gateway message: {text}");
-                match serde_json::from_str::<
-                    protocol::ws::Response<Box<serde_json::value::RawValue>>,
-                >(&text)
-                {
+                match serde_json::from_str::<protocol::ws::Response<Box<serde_json::value::RawValue>>>(
+                    &text,
+                ) {
                     Ok(r) => {
                         if let Err(e_res) = self.handle_response(r) {
                             error!("handling response: {e_res:?}");
                         }
                     }
                     Err(e_as_response) => {
-                        match serde_json::from_str::<
-                            protocol::order_gateway::OrderGatewayEvent,
-                        >(&text)
-                        {
+                        match serde_json::from_str::<protocol::order_gateway::OrderGatewayEvent>(
+                            &text,
+                        ) {
                             Ok(e) => {
                                 self.handle_event(&e)?;
                                 return Ok(Some(e));
                             }
                             Err(e_as_event) => {
                                 error!("decoding order gateway message as event: {e_as_event:?}");
-                                error!("decoding order gateway message as response: {e_as_response:?}");
+                                error!(
+                                    "decoding order gateway message as response: {e_as_response:?}"
+                                );
                                 return Ok(None);
                             }
                         }
@@ -467,10 +494,7 @@ impl OrderGatewayClient {
             Message::Ping(..) => {
                 trace!("ws ping received");
             }
-            Message::Binary(..)
-            | Message::Frame(..)
-            | Message::Pong(..)
-            | Message::Close(..) => {}
+            Message::Binary(..) | Message::Frame(..) | Message::Pong(..) | Message::Close(..) => {}
         }
         Ok(None)
     }
@@ -494,11 +518,14 @@ impl OrderGatewayClient {
         res: protocol::ws::Response<Box<serde_json::value::RawValue>>,
     ) -> Result<()> {
         if res.error.is_some() {
-            bail!("login failed: {:?}", res.error.expect("Error should be present when is_some() is true"));
+            bail!(
+                "login failed: {:?}",
+                res.error
+                    .expect("Error should be present when is_some() is true")
+            );
         }
         if let Some(res) = res.response {
-            let res: protocol::order_gateway::LoginResponse =
-                serde_json::from_str(res.get())?;
+            let res: protocol::order_gateway::LoginResponse = serde_json::from_str(res.get())?;
             for order in res.open_orders.unwrap_or_default() {
                 let order = match Order::try_from(order) {
                     Ok(o) => o,
@@ -516,10 +543,7 @@ impl OrderGatewayClient {
         Ok(())
     }
 
-    fn handle_event(
-        &mut self,
-        e: &protocol::order_gateway::OrderGatewayEvent,
-    ) -> Result<()> {
+    fn handle_event(&mut self, e: &protocol::order_gateway::OrderGatewayEvent) -> Result<()> {
         use protocol::order_gateway::*;
         trace!("order gateway event: {e:?}");
         match e {
@@ -533,14 +557,8 @@ impl OrderGatewayClient {
                 self.open_orders.remove(&order.order_id);
             }
             OrderGatewayEvent::OrderAcked(OrderAcked { order, .. })
-            | OrderGatewayEvent::OrderReplacedOrAmended(OrderReplacedOrAmended {
-                order,
-                ..
-            })
-            | OrderGatewayEvent::OrderPartiallyFilled(OrderPartiallyFilled {
-                order,
-                ..
-            }) => {
+            | OrderGatewayEvent::OrderReplacedOrAmended(OrderReplacedOrAmended { order, .. })
+            | OrderGatewayEvent::OrderPartiallyFilled(OrderPartiallyFilled { order, .. }) => {
                 let o: Order = order.clone().try_into()?;
                 self.open_orders.insert(o.order_id.clone(), o);
             }
@@ -559,9 +577,11 @@ impl OrderGatewayClient {
     pub async fn place_order(&mut self, place_order: PlaceOrder) -> Result<()> {
         let request_id = self.next_request_id;
         self.next_request_id += 1;
-        let req =
-            protocol::order_gateway::OrderGatewayRequest::PlaceOrder(place_order.into());
-        let wrapped_req = protocol::ws::Request { request_id, request: req.clone() };
+        let req = protocol::order_gateway::OrderGatewayRequest::PlaceOrder(place_order.into());
+        let wrapped_req = protocol::ws::Request {
+            request_id,
+            request: req.clone(),
+        };
         let payload = serde_json::to_string(&wrapped_req)?;
         trace!("sending place order request: {payload}");
         self.ws.send(Message::Text(payload.into())).await?;
@@ -577,7 +597,10 @@ impl OrderGatewayClient {
                 order_id: order_id.as_ref().to_string(),
             },
         );
-        let wrapped_req = protocol::ws::Request { request_id, request: req.clone() };
+        let wrapped_req = protocol::ws::Request {
+            request_id,
+            request: req.clone(),
+        };
         let payload = serde_json::to_string(&wrapped_req)?;
         trace!("sending cancel order request: {payload}");
         self.ws.send(Message::Text(payload.into())).await?;
@@ -629,21 +652,21 @@ impl OrderGatewayRestClient {
 
     /// Helper method to make authenticated HTTP requests
     async fn make_request(
-        &self, 
+        &self,
         method: reqwest::Method,
         path: &str,
-        body: Option<Value>
+        body: Option<Value>,
     ) -> Result<reqwest::Response> {
         let url = self.base_url.join(path)?;
         debug!("{} {}", method, url);
-        
+
         let token = self.get_token().await?;
-        
+
         // Create a temporary client for requests
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
             .build()?;
-            
+
         let mut request = client
             .request(method, url)
             .header("Authorization", format!("Bearer {}", token.as_str()))
@@ -661,14 +684,14 @@ impl OrderGatewayRestClient {
     pub async fn health(&self) -> Result<HealthResponse> {
         let url = self.base_url.join("orders/health")?;
         debug!("GET {}", url);
-        
+
         // Create a temporary client for health checks
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(10))
             .build()?;
-        
+
         let response = client.get(url).send().await?;
-        
+
         if response.status().is_success() {
             let health: HealthResponse = response.json().await?;
             Ok(health)
@@ -678,12 +701,38 @@ impl OrderGatewayRestClient {
     }
 
     /// Insert order via REST API
-    pub async fn insert_order(&self, symbol: &str, side: &str, quantity: i64, price: &str, time_in_force: &str, post_only: Option<bool>) -> Result<String> {
-        self.insert_order_with_tag(symbol, side, quantity, price, time_in_force, post_only, None).await
+    pub async fn insert_order(
+        &self,
+        symbol: &str,
+        side: &str,
+        quantity: i64,
+        price: &str,
+        time_in_force: &str,
+        post_only: Option<bool>,
+    ) -> Result<String> {
+        self.insert_order_with_tag(
+            symbol,
+            side,
+            quantity,
+            price,
+            time_in_force,
+            post_only,
+            None,
+        )
+        .await
     }
 
     /// Insert order with tag via REST API
-    pub async fn insert_order_with_tag(&self, symbol: &str, side: &str, quantity: i64, price: &str, time_in_force: &str, post_only: Option<bool>, tag: Option<&str>) -> Result<String> {
+    pub async fn insert_order_with_tag(
+        &self,
+        symbol: &str,
+        side: &str,
+        quantity: i64,
+        price: &str,
+        time_in_force: &str,
+        post_only: Option<bool>,
+        tag: Option<&str>,
+    ) -> Result<String> {
         let order_request = InsertOrderRequest {
             username: self.username.clone(),
             symbol: symbol.to_string(),
@@ -694,13 +743,15 @@ impl OrderGatewayRestClient {
             post_only,
             tag: tag.map(|t| t.to_string()),
         };
-        
-        let response = self.make_request(
-            reqwest::Method::POST,
-            "orders/insert_order",
-            Some(serde_json::to_value(order_request)?)
-        ).await?;
-        
+
+        let response = self
+            .make_request(
+                reqwest::Method::POST,
+                "orders/insert_order",
+                Some(serde_json::to_value(order_request)?),
+            )
+            .await?;
+
         if response.status().is_success() {
             let insert_response: InsertOrderResponse = response.json().await?;
             Ok(insert_response.order_id)
@@ -716,13 +767,15 @@ impl OrderGatewayRestClient {
             username: self.username.clone(),
             order_id: order_id.to_string(),
         };
-        
-        let response = self.make_request(
-            reqwest::Method::POST,
-            "orders/cancel_order",
-            Some(serde_json::to_value(cancel_request)?)
-        ).await?;
-        
+
+        let response = self
+            .make_request(
+                reqwest::Method::POST,
+                "orders/cancel_order",
+                Some(serde_json::to_value(cancel_request)?),
+            )
+            .await?;
+
         if response.status().is_success() {
             let _cancel_response: CancelOrderResponse = response.json().await?;
             Ok(())
@@ -737,13 +790,15 @@ impl OrderGatewayRestClient {
         let request = GetOpenOrdersRequest {
             username: self.username.clone(),
         };
-        
-        let response = self.make_request(
-            reqwest::Method::POST,
-            "orders/get_open_orders",
-            Some(serde_json::to_value(request)?)
-        ).await?;
-        
+
+        let response = self
+            .make_request(
+                reqwest::Method::POST,
+                "orders/get_open_orders",
+                Some(serde_json::to_value(request)?),
+            )
+            .await?;
+
         if response.status().is_success() {
             let orders_response: GetOpenOrdersResponse = response.json().await?;
             Ok(orders_response.orders)
@@ -758,13 +813,15 @@ impl OrderGatewayRestClient {
         let request = CancelAllRequest {
             username: self.username.clone(),
         };
-        
-        let response = self.make_request(
-            reqwest::Method::POST,
-            "orders/cancel_all",
-            Some(serde_json::to_value(request)?)
-        ).await?;
-        
+
+        let response = self
+            .make_request(
+                reqwest::Method::POST,
+                "orders/cancel_all",
+                Some(serde_json::to_value(request)?),
+            )
+            .await?;
+
         if response.status().is_success() {
             let cancel_response: CancelAllResponse = response.json().await?;
             Ok(cancel_response)
@@ -777,12 +834,8 @@ impl OrderGatewayRestClient {
     /// Get risk snapshot for the current user via REST API
     pub async fn get_risk_snapshot(&self) -> Result<Value> {
         let path = format!("orders/risk_snapshot/{}", self.username);
-        let response = self.make_request(
-            reqwest::Method::GET,
-            &path,
-            None
-        ).await?;
-        
+        let response = self.make_request(reqwest::Method::GET, &path, None).await?;
+
         if response.status().is_success() {
             let risk_data: Value = response.json().await?;
             Ok(risk_data)
@@ -793,12 +846,15 @@ impl OrderGatewayRestClient {
     }
 
     /// Get order history with pagination and filtering
-    pub async fn get_order_history(&self, params: Option<HistoryParams>) -> Result<ApiResponse<Vec<HistoricalOrder>>> {
+    pub async fn get_order_history(
+        &self,
+        params: Option<HistoryParams>,
+    ) -> Result<ApiResponse<Vec<HistoricalOrder>>> {
         let mut path = "orders/api/v1/orders/history".to_string();
-        
+
         if let Some(params) = params {
             let mut query_params = Vec::new();
-            
+
             if let Some(pagination) = params.pagination {
                 if let Some(limit) = pagination.limit {
                     query_params.push(format!("limit={}", limit));
@@ -807,7 +863,7 @@ impl OrderGatewayRestClient {
                     query_params.push(format!("offset={}", offset));
                 }
             }
-            
+
             if let Some(date_range) = params.date_range {
                 if let Some(start) = date_range.start_time {
                     query_params.push(format!("start_time={}", start.to_rfc3339()));
@@ -816,25 +872,21 @@ impl OrderGatewayRestClient {
                     query_params.push(format!("end_time={}", end.to_rfc3339()));
                 }
             }
-            
+
             if let Some(filters) = params.filters {
                 for (key, value) in filters {
                     query_params.push(format!("{}={}", key, value));
                 }
             }
-            
+
             if !query_params.is_empty() {
                 path.push('?');
                 path.push_str(&query_params.join("&"));
             }
         }
-        
-        let response = self.make_request(
-            reqwest::Method::GET,
-            &path,
-            None
-        ).await?;
-        
+
+        let response = self.make_request(reqwest::Method::GET, &path, None).await?;
+
         if response.status().is_success() {
             let history_response: crate::types::HistoryResponse = response.json().await?;
             Ok(ApiResponse {
@@ -852,9 +904,12 @@ impl OrderGatewayRestClient {
     }
 
     /// Get order history with specific filters
-    pub async fn get_order_history_filtered(&self, filters: OrderHistoryFilters) -> Result<ApiResponse<Vec<HistoricalOrder>>> {
+    pub async fn get_order_history_filtered(
+        &self,
+        filters: OrderHistoryFilters,
+    ) -> Result<ApiResponse<Vec<HistoricalOrder>>> {
         let mut query_params = Vec::new();
-        
+
         if let Some(symbol) = filters.symbol {
             query_params.push(format!("symbol={}", symbol));
         }
@@ -867,7 +922,7 @@ impl OrderGatewayRestClient {
         if let Some(order_type) = filters.order_type {
             query_params.push(format!("order_type={}", order_type));
         }
-        
+
         if let Some(pagination) = filters.pagination {
             if let Some(limit) = pagination.limit {
                 query_params.push(format!("limit={}", limit));
@@ -876,7 +931,7 @@ impl OrderGatewayRestClient {
                 query_params.push(format!("offset={}", offset));
             }
         }
-        
+
         if let Some(date_range) = filters.date_range {
             if let Some(start) = date_range.start_time {
                 query_params.push(format!("start_time={}", start.to_rfc3339()));
@@ -885,19 +940,15 @@ impl OrderGatewayRestClient {
                 query_params.push(format!("end_time={}", end.to_rfc3339()));
             }
         }
-        
+
         let path = if query_params.is_empty() {
             "orders/api/v1/orders/history".to_string()
         } else {
             format!("orders/api/v1/orders/history?{}", query_params.join("&"))
         };
-        
-        let response = self.make_request(
-            reqwest::Method::GET,
-            &path,
-            None
-        ).await?;
-        
+
+        let response = self.make_request(reqwest::Method::GET, &path, None).await?;
+
         if response.status().is_success() {
             let history_response: crate::types::HistoryResponse = response.json().await?;
             Ok(ApiResponse {
@@ -946,21 +997,21 @@ impl AccountGatewayClient {
 
     /// Helper method to make authenticated HTTP requests
     async fn make_request(
-        &self, 
+        &self,
         method: reqwest::Method,
         path: &str,
-        body: Option<Value>
+        body: Option<Value>,
     ) -> Result<reqwest::Response> {
         let url = self.base_url.join(path)?;
         debug!("{} {}", method, url);
-        
+
         let token = self.get_token().await?;
-        
+
         // Create a temporary client for requests
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
             .build()?;
-            
+
         let mut request = client
             .request(method, url)
             .header("Authorization", token.as_str())
@@ -977,12 +1028,8 @@ impl AccountGatewayClient {
     /// Get account balances for a user
     pub async fn get_balances(&self, username: &str) -> Result<Vec<Balance>> {
         let path = format!("balances?username={}", username);
-        let response = self.make_request(
-            reqwest::Method::GET,
-            &path,
-            None
-        ).await?;
-        
+        let response = self.make_request(reqwest::Method::GET, &path, None).await?;
+
         if response.status().is_success() {
             let balances: Vec<Balance> = response.json().await?;
             Ok(balances)
@@ -995,12 +1042,8 @@ impl AccountGatewayClient {
     /// Get account positions for a user
     pub async fn get_positions(&self, username: &str) -> Result<Vec<Position>> {
         let path = format!("positions?username={}", username);
-        let response = self.make_request(
-            reqwest::Method::GET,
-            &path,
-            None
-        ).await?;
-        
+        let response = self.make_request(reqwest::Method::GET, &path, None).await?;
+
         if response.status().is_success() {
             let positions: Vec<Position> = response.json().await?;
             Ok(positions)
@@ -1013,12 +1056,8 @@ impl AccountGatewayClient {
     /// Get user account status
     pub async fn get_user_status(&self, username: &str) -> Result<UserStatus> {
         let path = format!("user-status?username={}", username);
-        let response = self.make_request(
-            reqwest::Method::GET,
-            &path,
-            None
-        ).await?;
-        
+        let response = self.make_request(reqwest::Method::GET, &path, None).await?;
+
         if response.status().is_success() {
             let status: UserStatus = response.json().await?;
             Ok(status)
@@ -1030,12 +1069,10 @@ impl AccountGatewayClient {
 
     /// Get open interest data
     pub async fn get_open_interest(&self) -> Result<Vec<OpenInterest>> {
-        let response = self.make_request(
-            reqwest::Method::GET,
-            "open-interest",
-            None
-        ).await?;
-        
+        let response = self
+            .make_request(reqwest::Method::GET, "open-interest", None)
+            .await?;
+
         if response.status().is_success() {
             let data: Vec<OpenInterest> = response.json().await?;
             Ok(data)
@@ -1046,12 +1083,16 @@ impl AccountGatewayClient {
     }
 
     /// Get user's fill history
-    pub async fn get_fills(&self, username: &str, params: Option<HistoryParams>) -> Result<ApiResponse<Vec<Fill>>> {
+    pub async fn get_fills(
+        &self,
+        username: &str,
+        params: Option<HistoryParams>,
+    ) -> Result<ApiResponse<Vec<Fill>>> {
         let mut path = format!("fills?username={}", username);
-        
+
         if let Some(params) = params {
             let mut query_params = Vec::new();
-            
+
             if let Some(pagination) = params.pagination {
                 if let Some(limit) = pagination.limit {
                     query_params.push(format!("limit={}", limit));
@@ -1060,7 +1101,7 @@ impl AccountGatewayClient {
                     query_params.push(format!("offset={}", offset));
                 }
             }
-            
+
             if let Some(date_range) = params.date_range {
                 if let Some(start) = date_range.start_time {
                     query_params.push(format!("start_time={}", start.to_rfc3339()));
@@ -1069,25 +1110,21 @@ impl AccountGatewayClient {
                     query_params.push(format!("end_time={}", end.to_rfc3339()));
                 }
             }
-            
+
             if let Some(filters) = params.filters {
                 for (key, value) in filters {
                     query_params.push(format!("{}={}", key, value));
                 }
             }
-            
+
             if !query_params.is_empty() {
                 path.push('&');
                 path.push_str(&query_params.join("&"));
             }
         }
-        
-        let response = self.make_request(
-            reqwest::Method::GET,
-            &path,
-            None
-        ).await?;
-        
+
+        let response = self.make_request(reqwest::Method::GET, &path, None).await?;
+
         if response.status().is_success() {
             let fills: Vec<Fill> = response.json().await?;
             Ok(ApiResponse {
@@ -1101,14 +1138,18 @@ impl AccountGatewayClient {
     }
 
     /// Get recent fills for a specific symbol
-    pub async fn get_last_fills(&self, username: &str, symbol: &str, count: u32) -> Result<Vec<Fill>> {
-        let path = format!("last-fills?username={}&symbol={}&count={}", username, symbol, count);
-        let response = self.make_request(
-            reqwest::Method::GET,
-            &path,
-            None
-        ).await?;
-        
+    pub async fn get_last_fills(
+        &self,
+        username: &str,
+        symbol: &str,
+        count: u32,
+    ) -> Result<Vec<Fill>> {
+        let path = format!(
+            "last-fills?username={}&symbol={}&count={}",
+            username, symbol, count
+        );
+        let response = self.make_request(reqwest::Method::GET, &path, None).await?;
+
         if response.status().is_success() {
             let fills: Vec<Fill> = response.json().await?;
             Ok(fills)
@@ -1119,12 +1160,16 @@ impl AccountGatewayClient {
     }
 
     /// Get funding payment history
-    pub async fn get_funding_history(&self, username: &str, params: Option<HistoryParams>) -> Result<ApiResponse<Vec<FundingHistory>>> {
+    pub async fn get_funding_history(
+        &self,
+        username: &str,
+        params: Option<HistoryParams>,
+    ) -> Result<ApiResponse<Vec<FundingHistory>>> {
         let mut path = format!("funding-history?username={}", username);
-        
+
         if let Some(params) = params {
             let mut query_params = Vec::new();
-            
+
             if let Some(pagination) = params.pagination {
                 if let Some(limit) = pagination.limit {
                     query_params.push(format!("limit={}", limit));
@@ -1133,7 +1178,7 @@ impl AccountGatewayClient {
                     query_params.push(format!("offset={}", offset));
                 }
             }
-            
+
             if let Some(date_range) = params.date_range {
                 if let Some(start) = date_range.start_time {
                     query_params.push(format!("start_time={}", start.to_rfc3339()));
@@ -1142,19 +1187,15 @@ impl AccountGatewayClient {
                     query_params.push(format!("end_time={}", end.to_rfc3339()));
                 }
             }
-            
+
             if !query_params.is_empty() {
                 path.push('&');
                 path.push_str(&query_params.join("&"));
             }
         }
-        
-        let response = self.make_request(
-            reqwest::Method::GET,
-            &path,
-            None
-        ).await?;
-        
+
+        let response = self.make_request(reqwest::Method::GET, &path, None).await?;
+
         if response.status().is_success() {
             let records: Vec<FundingHistory> = response.json().await?;
             Ok(ApiResponse {
@@ -1168,12 +1209,16 @@ impl AccountGatewayClient {
     }
 
     /// Get deposit history
-    pub async fn get_deposit_history(&self, username: &str, params: Option<HistoryParams>) -> Result<ApiResponse<Vec<DepositRecord>>> {
+    pub async fn get_deposit_history(
+        &self,
+        username: &str,
+        params: Option<HistoryParams>,
+    ) -> Result<ApiResponse<Vec<DepositRecord>>> {
         let mut path = format!("deposit-history?username={}", username);
-        
+
         if let Some(params) = params {
             let mut query_params = Vec::new();
-            
+
             if let Some(pagination) = params.pagination {
                 if let Some(limit) = pagination.limit {
                     query_params.push(format!("limit={}", limit));
@@ -1182,7 +1227,7 @@ impl AccountGatewayClient {
                     query_params.push(format!("offset={}", offset));
                 }
             }
-            
+
             if let Some(date_range) = params.date_range {
                 if let Some(start) = date_range.start_time {
                     query_params.push(format!("start_time={}", start.to_rfc3339()));
@@ -1191,19 +1236,15 @@ impl AccountGatewayClient {
                     query_params.push(format!("end_time={}", end.to_rfc3339()));
                 }
             }
-            
+
             if !query_params.is_empty() {
                 path.push('&');
                 path.push_str(&query_params.join("&"));
             }
         }
-        
-        let response = self.make_request(
-            reqwest::Method::GET,
-            &path,
-            None
-        ).await?;
-        
+
+        let response = self.make_request(reqwest::Method::GET, &path, None).await?;
+
         if response.status().is_success() {
             let records: Vec<DepositRecord> = response.json().await?;
             Ok(ApiResponse {
@@ -1217,12 +1258,16 @@ impl AccountGatewayClient {
     }
 
     /// Get withdrawal history
-    pub async fn get_withdrawal_history(&self, username: &str, params: Option<HistoryParams>) -> Result<ApiResponse<Vec<WithdrawalRecord>>> {
+    pub async fn get_withdrawal_history(
+        &self,
+        username: &str,
+        params: Option<HistoryParams>,
+    ) -> Result<ApiResponse<Vec<WithdrawalRecord>>> {
         let mut path = format!("withdrawal-history?username={}", username);
-        
+
         if let Some(params) = params {
             let mut query_params = Vec::new();
-            
+
             if let Some(pagination) = params.pagination {
                 if let Some(limit) = pagination.limit {
                     query_params.push(format!("limit={}", limit));
@@ -1231,7 +1276,7 @@ impl AccountGatewayClient {
                     query_params.push(format!("offset={}", offset));
                 }
             }
-            
+
             if let Some(date_range) = params.date_range {
                 if let Some(start) = date_range.start_time {
                     query_params.push(format!("start_time={}", start.to_rfc3339()));
@@ -1240,19 +1285,15 @@ impl AccountGatewayClient {
                     query_params.push(format!("end_time={}", end.to_rfc3339()));
                 }
             }
-            
+
             if !query_params.is_empty() {
                 path.push('&');
                 path.push_str(&query_params.join("&"));
             }
         }
-        
-        let response = self.make_request(
-            reqwest::Method::GET,
-            &path,
-            None
-        ).await?;
-        
+
+        let response = self.make_request(reqwest::Method::GET, &path, None).await?;
+
         if response.status().is_success() {
             let records: Vec<WithdrawalRecord> = response.json().await?;
             Ok(ApiResponse {
@@ -1267,12 +1308,14 @@ impl AccountGatewayClient {
 
     /// Submit deposit request
     pub async fn deposit(&self, request: DepositRequest) -> Result<()> {
-        let response = self.make_request(
-            reqwest::Method::POST,
-            "deposit",
-            Some(serde_json::to_value(request)?)
-        ).await?;
-        
+        let response = self
+            .make_request(
+                reqwest::Method::POST,
+                "deposit",
+                Some(serde_json::to_value(request)?),
+            )
+            .await?;
+
         if response.status().is_success() {
             Ok(())
         } else {
@@ -1283,12 +1326,14 @@ impl AccountGatewayClient {
 
     /// Submit withdrawal request
     pub async fn withdraw(&self, request: WithdrawRequest) -> Result<()> {
-        let response = self.make_request(
-            reqwest::Method::POST,
-            "withdraw",
-            Some(serde_json::to_value(request)?)
-        ).await?;
-        
+        let response = self
+            .make_request(
+                reqwest::Method::POST,
+                "withdraw",
+                Some(serde_json::to_value(request)?),
+            )
+            .await?;
+
         if response.status().is_success() {
             Ok(())
         } else {
@@ -1299,12 +1344,14 @@ impl AccountGatewayClient {
 
     /// Liquidate account
     pub async fn liquidate(&self, request: LiquidateRequest) -> Result<LiquidateResponse> {
-        let response = self.make_request(
-            reqwest::Method::POST,
-            "liquidate",
-            Some(serde_json::to_value(request)?)
-        ).await?;
-        
+        let response = self
+            .make_request(
+                reqwest::Method::POST,
+                "liquidate",
+                Some(serde_json::to_value(request)?),
+            )
+            .await?;
+
         if response.status().is_success() {
             let liquidate_response: LiquidateResponse = response.json().await?;
             Ok(liquidate_response)
@@ -1315,31 +1362,31 @@ impl AccountGatewayClient {
     }
 
     /// Get trading volume statistics
-    pub async fn get_trading_volume(&self, username: &str, params: Option<DateRangeParams>) -> Result<Decimal> {
+    pub async fn get_trading_volume(
+        &self,
+        username: &str,
+        params: Option<DateRangeParams>,
+    ) -> Result<Decimal> {
         let mut path = format!("trading-volume?username={}", username);
-        
+
         if let Some(params) = params {
             let mut query_params = Vec::new();
-            
+
             if let Some(start) = params.start_time {
                 query_params.push(format!("start_time={}", start.to_rfc3339()));
             }
             if let Some(end) = params.end_time {
                 query_params.push(format!("end_time={}", end.to_rfc3339()));
             }
-            
+
             if !query_params.is_empty() {
                 path.push('&');
                 path.push_str(&query_params.join("&"));
             }
         }
-        
-        let response = self.make_request(
-            reqwest::Method::GET,
-            &path,
-            None
-        ).await?;
-        
+
+        let response = self.make_request(reqwest::Method::GET, &path, None).await?;
+
         if response.status().is_success() {
             let volume: Decimal = response.json().await?;
             Ok(volume)
@@ -1350,37 +1397,41 @@ impl AccountGatewayClient {
     }
 
     /// Get deposit statistics
-    pub async fn get_deposit_stats(&self, username: &str, params: Option<DateRangeParams>) -> Result<DepositStats> {
+    pub async fn get_deposit_stats(
+        &self,
+        username: &str,
+        params: Option<DateRangeParams>,
+    ) -> Result<DepositStats> {
         let mut path = format!("deposit-stats?username={}", username);
-        
+
         if let Some(params) = params {
             let mut query_params = Vec::new();
-            
+
             if let Some(start) = params.start_time {
                 query_params.push(format!("start_time={}", start.to_rfc3339()));
             }
             if let Some(end) = params.end_time {
                 query_params.push(format!("end_time={}", end.to_rfc3339()));
             }
-            
+
             if !query_params.is_empty() {
                 path.push('&');
                 path.push_str(&query_params.join("&"));
             }
         }
-        
-        let response = self.make_request(
-            reqwest::Method::GET,
-            &path,
-            None
-        ).await?;
-        
+
+        let response = self.make_request(reqwest::Method::GET, &path, None).await?;
+
         if response.status().is_success() {
             let response_text = response.text().await?;
             match serde_json::from_str::<DepositStats>(&response_text) {
                 Ok(stats) => Ok(stats),
                 Err(e) => {
-                    bail!("Failed to deserialize deposit stats from response '{}': {}", response_text, e)
+                    bail!(
+                        "Failed to deserialize deposit stats from response '{}': {}",
+                        response_text,
+                        e
+                    )
                 }
             }
         } else {
@@ -1390,37 +1441,41 @@ impl AccountGatewayClient {
     }
 
     /// Get withdrawal statistics
-    pub async fn get_withdrawal_stats(&self, username: &str, params: Option<DateRangeParams>) -> Result<WithdrawalStats> {
+    pub async fn get_withdrawal_stats(
+        &self,
+        username: &str,
+        params: Option<DateRangeParams>,
+    ) -> Result<WithdrawalStats> {
         let mut path = format!("withdrawal-stats?username={}", username);
-        
+
         if let Some(params) = params {
             let mut query_params = Vec::new();
-            
+
             if let Some(start) = params.start_time {
                 query_params.push(format!("start_time={}", start.format("%Y-%m-%d")));
             }
             if let Some(end) = params.end_time {
                 query_params.push(format!("end_time={}", end.format("%Y-%m-%d")));
             }
-            
+
             if !query_params.is_empty() {
                 path.push('&');
                 path.push_str(&query_params.join("&"));
             }
         }
-        
-        let response = self.make_request(
-            reqwest::Method::GET,
-            &path,
-            None
-        ).await?;
-        
+
+        let response = self.make_request(reqwest::Method::GET, &path, None).await?;
+
         if response.status().is_success() {
             let response_text = response.text().await?;
             match serde_json::from_str::<WithdrawalStats>(&response_text) {
                 Ok(stats) => Ok(stats),
                 Err(e) => {
-                    bail!("Failed to deserialize withdrawal stats from response '{}': {}", response_text, e)
+                    bail!(
+                        "Failed to deserialize withdrawal stats from response '{}': {}",
+                        response_text,
+                        e
+                    )
                 }
             }
         } else {
@@ -1432,26 +1487,22 @@ impl AccountGatewayClient {
     /// Get admin statistics (requires admin privileges)
     pub async fn get_admin_stats(&self, params: DateRangeParams) -> Result<AdminResponse> {
         let mut query_params = Vec::new();
-        
+
         if let Some(start) = params.start_time {
             query_params.push(format!("start_time={}", start.format("%Y-%m-%d")));
         }
         if let Some(end) = params.end_time {
             query_params.push(format!("end_time={}", end.format("%Y-%m-%d")));
         }
-        
+
         let path = if query_params.is_empty() {
             "admin-stats".to_string()
         } else {
             format!("admin-stats?{}", query_params.join("&"))
         };
-        
-        let response = self.make_request(
-            reqwest::Method::GET,
-            &path,
-            None
-        ).await?;
-        
+
+        let response = self.make_request(reqwest::Method::GET, &path, None).await?;
+
         if response.status().is_success() {
             let stats: AdminResponse = response.json().await?;
             Ok(stats)
@@ -1497,20 +1548,20 @@ impl AuthGatewayExtendedClient {
 
     /// Helper method to make authenticated HTTP requests
     async fn make_request(
-        &self, 
+        &self,
         method: reqwest::Method,
         path: &str,
-        body: Option<Value>
+        body: Option<Value>,
     ) -> Result<reqwest::Response> {
         let url = self.base_url.join(path)?;
         debug!("{} {}", method, url);
-        
+
         let token = self.get_token().await?;
-        
+
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
             .build()?;
-            
+
         let mut request = client
             .request(method, url)
             .header("Authorization", token.as_str())
@@ -1526,12 +1577,14 @@ impl AuthGatewayExtendedClient {
 
     /// Create a new user account
     pub async fn create_user(&self, request: CreateUserRequest) -> Result<CreateUserResponse> {
-        let response = self.make_request(
-            reqwest::Method::POST,
-            "auth/create_user",
-            Some(serde_json::to_value(request)?)
-        ).await?;
-        
+        let response = self
+            .make_request(
+                reqwest::Method::POST,
+                "auth/create_user",
+                Some(serde_json::to_value(request)?),
+            )
+            .await?;
+
         if response.status().is_success() {
             let user_response: CreateUserResponse = response.json().await?;
             Ok(user_response)
@@ -1543,12 +1596,14 @@ impl AuthGatewayExtendedClient {
 
     /// Create a new API key
     pub async fn create_api_key(&self, request: CreateApiKeyRequest) -> Result<ApiKeyResponse> {
-        let response = self.make_request(
-            reqwest::Method::POST,
-            "auth/create_api_key",
-            Some(serde_json::to_value(request)?)
-        ).await?;
-        
+        let response = self
+            .make_request(
+                reqwest::Method::POST,
+                "auth/create_api_key",
+                Some(serde_json::to_value(request)?),
+            )
+            .await?;
+
         if response.status().is_success() {
             let api_key_response: ApiKeyResponse = response.json().await?;
             Ok(api_key_response)
@@ -1563,13 +1618,15 @@ impl AuthGatewayExtendedClient {
         let request_body = serde_json::json!({
             "username": username
         });
-        
-        let response = self.make_request(
-            reqwest::Method::POST,
-            "auth/get_api_keys",
-            Some(request_body)
-        ).await?;
-        
+
+        let response = self
+            .make_request(
+                reqwest::Method::POST,
+                "auth/get_api_keys",
+                Some(request_body),
+            )
+            .await?;
+
         if response.status().is_success() {
             let api_keys_response: GetApiKeysResponse = response.json().await?;
             Ok(api_keys_response.api_keys)
@@ -1584,13 +1641,15 @@ impl AuthGatewayExtendedClient {
         let request_body = serde_json::json!({
             "api_key": api_key
         });
-        
-        let response = self.make_request(
-            reqwest::Method::POST,
-            "auth/revoke_api_key",
-            Some(request_body)
-        ).await?;
-        
+
+        let response = self
+            .make_request(
+                reqwest::Method::POST,
+                "auth/revoke_api_key",
+                Some(request_body),
+            )
+            .await?;
+
         if response.status().is_success() {
             let revoke_response: RevokeApiKeyResponse = response.json().await?;
             Ok(revoke_response)
@@ -1617,13 +1676,15 @@ impl AuthGatewayExtendedClient {
         let request_body = serde_json::json!({
             "token": token
         });
-        
-        let response = self.make_request(
-            reqwest::Method::POST,
-            "auth/validate_token",
-            Some(request_body)
-        ).await?;
-        
+
+        let response = self
+            .make_request(
+                reqwest::Method::POST,
+                "auth/validate_token",
+                Some(request_body),
+            )
+            .await?;
+
         if response.status().is_success() {
             let validation: TokenValidation = response.json().await?;
             Ok(validation)
@@ -1634,14 +1695,23 @@ impl AuthGatewayExtendedClient {
     }
 
     /// Get user token (delegates to base client)
-    pub async fn get_user_token(&self, username: &str, password: &str, expiration_seconds: u64) -> Result<String> {
-        self.base_client.get_user_token(username, password, expiration_seconds).await
+    pub async fn get_user_token(
+        &self,
+        username: &str,
+        password: &str,
+        expiration_seconds: u64,
+    ) -> Result<String> {
+        self.base_client
+            .get_user_token(username, password, expiration_seconds)
+            .await
             .map_err(|e| anyhow!("Failed to get user token: {}", e))
     }
 
     /// Get instruments (delegates to base client)
     pub async fn get_instruments(&self, token: &str) -> Result<Vec<auth_gateway::Instrument>> {
-        self.base_client.get_instruments(token).await
+        self.base_client
+            .get_instruments(token)
+            .await
             .map_err(|e| anyhow!("Failed to get instruments: {}", e))
     }
 }
@@ -1653,10 +1723,7 @@ pub struct RiskManagerClient {
 }
 
 impl RiskManagerClient {
-    pub fn new(
-        base_url: Url,
-        user_token: Arc<ArcSwapOption<(ArcStr, DateTime<Utc>)>>,
-    ) -> Self {
+    pub fn new(base_url: Url, user_token: Arc<ArcSwapOption<(ArcStr, DateTime<Utc>)>>) -> Self {
         Self {
             base_url,
             user_token,
@@ -1678,20 +1745,20 @@ impl RiskManagerClient {
 
     /// Helper method to make authenticated HTTP requests
     async fn make_request(
-        &self, 
+        &self,
         method: reqwest::Method,
         path: &str,
-        body: Option<Value>
+        body: Option<Value>,
     ) -> Result<reqwest::Response> {
         let url = self.base_url.join(path)?;
         debug!("{} {}", method, url);
-        
+
         let token = self.get_token().await?;
-        
+
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
             .build()?;
-            
+
         let mut request = client
             .request(method, url)
             .header("Authorization", token.as_str())
@@ -1708,12 +1775,8 @@ impl RiskManagerClient {
     /// Get risk snapshot for a specific user
     pub async fn get_risk_snapshot(&self, username: &str) -> Result<RiskSnapshot> {
         let path = format!("risk_manager/risk_snapshot?username={}", username);
-        let response = self.make_request(
-            reqwest::Method::GET,
-            &path,
-            None
-        ).await?;
-        
+        let response = self.make_request(reqwest::Method::GET, &path, None).await?;
+
         if response.status().is_success() {
             let snapshot: RiskSnapshot = response.json().await?;
             Ok(snapshot)
@@ -1724,12 +1787,15 @@ impl RiskManagerClient {
     }
 
     /// Get all risk snapshots (admin only)
-    pub async fn get_admin_risk_snapshots(&self, params: Option<HistoryParams>) -> Result<ApiResponse<Vec<RiskSnapshot>>> {
+    pub async fn get_admin_risk_snapshots(
+        &self,
+        params: Option<HistoryParams>,
+    ) -> Result<ApiResponse<Vec<RiskSnapshot>>> {
         let mut path = "risk_manager/admin/risk_snapshots".to_string();
-        
+
         if let Some(params) = params {
             let mut query_params = Vec::new();
-            
+
             if let Some(pagination) = params.pagination {
                 if let Some(limit) = pagination.limit {
                     query_params.push(format!("limit={}", limit));
@@ -1738,7 +1804,7 @@ impl RiskManagerClient {
                     query_params.push(format!("offset={}", offset));
                 }
             }
-            
+
             if let Some(date_range) = params.date_range {
                 if let Some(start) = date_range.start_time {
                     query_params.push(format!("start_time={}", start.to_rfc3339()));
@@ -1747,19 +1813,15 @@ impl RiskManagerClient {
                     query_params.push(format!("end_time={}", end.to_rfc3339()));
                 }
             }
-            
+
             if !query_params.is_empty() {
                 path.push('?');
                 path.push_str(&query_params.join("&"));
             }
         }
-        
-        let response = self.make_request(
-            reqwest::Method::GET,
-            &path,
-            None
-        ).await?;
-        
+
+        let response = self.make_request(reqwest::Method::GET, &path, None).await?;
+
         if response.status().is_success() {
             let snapshots: Vec<RiskSnapshot> = response.json().await?;
             Ok(ApiResponse {
@@ -1772,16 +1834,22 @@ impl RiskManagerClient {
         }
     }
 
-
-
     /// Get stress test risk snapshots with specified market move percentage
-    pub async fn get_stress_test_risk_snapshots(&self, percent_move: i32) -> Result<Vec<StressTestResult>> {
-        let response = self.make_request(
-            reqwest::Method::GET,
-            &format!("risk_manager/admin/stress_test_risk_snapshots?percent_move={}", percent_move),
-            None
-        ).await?;
-        
+    pub async fn get_stress_test_risk_snapshots(
+        &self,
+        percent_move: i32,
+    ) -> Result<Vec<StressTestResult>> {
+        let response = self
+            .make_request(
+                reqwest::Method::GET,
+                &format!(
+                    "risk_manager/admin/stress_test_risk_snapshots?percent_move={}",
+                    percent_move
+                ),
+                None,
+            )
+            .await?;
+
         if response.status().is_success() {
             let stress_results: Vec<StressTestResult> = response.json().await?;
             Ok(stress_results)
@@ -1799,10 +1867,7 @@ pub struct SettlementGatewayClient {
 }
 
 impl SettlementGatewayClient {
-    pub fn new(
-        base_url: Url,
-        user_token: Arc<ArcSwapOption<(ArcStr, DateTime<Utc>)>>,
-    ) -> Self {
+    pub fn new(base_url: Url, user_token: Arc<ArcSwapOption<(ArcStr, DateTime<Utc>)>>) -> Self {
         Self {
             base_url,
             user_token,
@@ -1824,20 +1889,20 @@ impl SettlementGatewayClient {
 
     /// Helper method to make authenticated HTTP requests
     async fn make_request(
-        &self, 
+        &self,
         method: reqwest::Method,
         path: &str,
-        body: Option<Value>
+        body: Option<Value>,
     ) -> Result<reqwest::Response> {
         let url = self.base_url.join(path)?;
         debug!("{} {}", method, url);
-        
+
         let token = self.get_token().await?;
-        
+
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
             .build()?;
-            
+
         let mut request = client
             .request(method, url)
             .header("Authorization", format!("Bearer {}", token.as_str()))
@@ -1853,12 +1918,10 @@ impl SettlementGatewayClient {
 
     /// Get settlement status
     pub async fn get_status(&self) -> Result<SettlementStatus> {
-        let response = self.make_request(
-            reqwest::Method::GET,
-            "settlement/status",
-            None
-        ).await?;
-        
+        let response = self
+            .make_request(reqwest::Method::GET, "settlement/status", None)
+            .await?;
+
         if response.status().is_success() {
             let status: SettlementStatus = response.json().await?;
             Ok(status)
@@ -1869,12 +1932,15 @@ impl SettlementGatewayClient {
     }
 
     /// Get settlement history
-    pub async fn get_settlement_history(&self, params: Option<HistoryParams>) -> Result<ApiResponse<Vec<SettlementRecord>>> {
+    pub async fn get_settlement_history(
+        &self,
+        params: Option<HistoryParams>,
+    ) -> Result<ApiResponse<Vec<SettlementRecord>>> {
         let mut path = "settlement/history".to_string();
-        
+
         if let Some(params) = params {
             let mut query_params = Vec::new();
-            
+
             if let Some(pagination) = params.pagination {
                 if let Some(limit) = pagination.limit {
                     query_params.push(format!("limit={}", limit));
@@ -1883,7 +1949,7 @@ impl SettlementGatewayClient {
                     query_params.push(format!("offset={}", offset));
                 }
             }
-            
+
             if let Some(date_range) = params.date_range {
                 if let Some(start) = date_range.start_time {
                     query_params.push(format!("start_time={}", start.to_rfc3339()));
@@ -1892,19 +1958,15 @@ impl SettlementGatewayClient {
                     query_params.push(format!("end_time={}", end.to_rfc3339()));
                 }
             }
-            
+
             if !query_params.is_empty() {
                 path.push('?');
                 path.push_str(&query_params.join("&"));
             }
         }
-        
-        let response = self.make_request(
-            reqwest::Method::GET,
-            &path,
-            None
-        ).await?;
-        
+
+        let response = self.make_request(reqwest::Method::GET, &path, None).await?;
+
         if response.status().is_success() {
             let records: Vec<SettlementRecord> = response.json().await?;
             Ok(ApiResponse {
@@ -1919,12 +1981,10 @@ impl SettlementGatewayClient {
 
     /// Get settlement configuration
     pub async fn get_configuration(&self) -> Result<SettlementConfig> {
-        let response = self.make_request(
-            reqwest::Method::GET,
-            "settlement/config",
-            None
-        ).await?;
-        
+        let response = self
+            .make_request(reqwest::Method::GET, "settlement/config", None)
+            .await?;
+
         if response.status().is_success() {
             let config: SettlementConfig = response.json().await?;
             Ok(config)
@@ -1936,12 +1996,14 @@ impl SettlementGatewayClient {
 
     /// Update settlement configuration
     pub async fn update_configuration(&self, config: SettlementConfig) -> Result<SettlementConfig> {
-        let response = self.make_request(
-            reqwest::Method::PUT,
-            "settlement/config",
-            Some(serde_json::to_value(config)?)
-        ).await?;
-        
+        let response = self
+            .make_request(
+                reqwest::Method::PUT,
+                "settlement/config",
+                Some(serde_json::to_value(config)?),
+            )
+            .await?;
+
         if response.status().is_success() {
             let updated_config: SettlementConfig = response.json().await?;
             Ok(updated_config)
@@ -1959,10 +2021,7 @@ pub struct CandleServerClient {
 }
 
 impl CandleServerClient {
-    pub fn new(
-        base_url: Url,
-        user_token: Arc<ArcSwapOption<(ArcStr, DateTime<Utc>)>>,
-    ) -> Self {
+    pub fn new(base_url: Url, user_token: Arc<ArcSwapOption<(ArcStr, DateTime<Utc>)>>) -> Self {
         Self {
             base_url,
             user_token,
@@ -1984,20 +2043,20 @@ impl CandleServerClient {
 
     /// Helper method to make authenticated HTTP requests
     async fn make_request(
-        &self, 
+        &self,
         method: reqwest::Method,
         path: &str,
-        body: Option<Value>
+        body: Option<Value>,
     ) -> Result<reqwest::Response> {
         let url = self.base_url.join(path)?;
         debug!("{} {}", method, url);
-        
+
         let token = self.get_token().await?;
-        
+
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
             .build()?;
-            
+
         let mut request = client
             .request(method, url)
             .header("Authorization", token.as_str())
@@ -2013,12 +2072,10 @@ impl CandleServerClient {
 
     /// Get available symbols
     pub async fn get_symbols(&self) -> Result<Vec<String>> {
-        let response = self.make_request(
-            reqwest::Method::GET,
-            "candle/symbols",
-            None
-        ).await?;
-        
+        let response = self
+            .make_request(reqwest::Method::GET, "candle/symbols", None)
+            .await?;
+
         if response.status().is_success() {
             let symbols: Vec<String> = response.json().await?;
             Ok(symbols)
@@ -2030,12 +2087,10 @@ impl CandleServerClient {
 
     /// Get available timeframes
     pub async fn get_timeframes(&self) -> Result<Vec<String>> {
-        let response = self.make_request(
-            reqwest::Method::GET,
-            "candle/timeframes",
-            None
-        ).await?;
-        
+        let response = self
+            .make_request(reqwest::Method::GET, "candle/timeframes", None)
+            .await?;
+
         if response.status().is_success() {
             let timeframes: Vec<String> = response.json().await?;
             Ok(timeframes)
@@ -2046,9 +2101,14 @@ impl CandleServerClient {
     }
 
     /// Get candle data for a symbol and timeframe
-    pub async fn get_candle_data(&self, symbol: &str, timeframe: &str, params: CandleParams) -> Result<ApiResponse<Vec<Candle>>> {
+    pub async fn get_candle_data(
+        &self,
+        symbol: &str,
+        timeframe: &str,
+        params: CandleParams,
+    ) -> Result<ApiResponse<Vec<Candle>>> {
         let mut query_params = Vec::new();
-        
+
         if let Some(start) = params.start_time {
             query_params.push(format!("start_time={}", start.format("%Y-%m-%d")));
         }
@@ -2058,19 +2118,20 @@ impl CandleServerClient {
         if let Some(limit) = params.limit {
             query_params.push(format!("limit={}", limit));
         }
-        
+
         let path = if query_params.is_empty() {
             format!("candle/data/{}/{}", symbol, timeframe)
         } else {
-            format!("candle/data/{}/{}?{}", symbol, timeframe, query_params.join("&"))
+            format!(
+                "candle/data/{}/{}?{}",
+                symbol,
+                timeframe,
+                query_params.join("&")
+            )
         };
-        
-        let response = self.make_request(
-            reqwest::Method::GET,
-            &path,
-            None
-        ).await?;
-        
+
+        let response = self.make_request(reqwest::Method::GET, &path, None).await?;
+
         if response.status().is_success() {
             let candles: Vec<Candle> = response.json().await?;
             Ok(ApiResponse {
@@ -2084,14 +2145,15 @@ impl CandleServerClient {
     }
 
     /// Get latest candles for a symbol and timeframe
-    pub async fn get_latest_candles(&self, symbol: &str, timeframe: &str, count: u32) -> Result<Vec<Candle>> {
+    pub async fn get_latest_candles(
+        &self,
+        symbol: &str,
+        timeframe: &str,
+        count: u32,
+    ) -> Result<Vec<Candle>> {
         let path = format!("candle/latest/{}/{}?count={}", symbol, timeframe, count);
-        let response = self.make_request(
-            reqwest::Method::GET,
-            &path,
-            None
-        ).await?;
-        
+        let response = self.make_request(reqwest::Method::GET, &path, None).await?;
+
         if response.status().is_success() {
             let candles: Vec<Candle> = response.json().await?;
             Ok(candles)

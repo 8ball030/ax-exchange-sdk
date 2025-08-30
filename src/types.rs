@@ -478,8 +478,6 @@ pub struct StressTestResult {
     pub liquidation_summary: LiquidationSummary,
 }
 
-
-
 // Order History types
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrderHistoryFilters {
@@ -551,7 +549,7 @@ pub struct SettlementRecord {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SettlementConfig {
     pub settlement_frequency: String, // e.g., "daily", "weekly"
-    pub settlement_time: String, // e.g., "16:00:00"
+    pub settlement_time: String,      // e.g., "16:00:00"
     pub enabled_symbols: Vec<String>,
     pub risk_parameters: HashMap<String, String>,
 }
