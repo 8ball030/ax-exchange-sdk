@@ -1,12 +1,13 @@
 [package]
+edition = "2021"
 name = "adx-sdk"
 version = "0.1.0"
-edition = "2021"
 
 [dependencies]
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
 arcstr = { workspace = true }
+auth-gateway.workspace = true
 chrono = { workspace = true }
 futures = { workspace = true }
 log = { workspace = true }
@@ -19,4 +20,3 @@ serde_json = { workspace = true }
 tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
 url = { workspace = true }
-auth-gateway.workspace = true
