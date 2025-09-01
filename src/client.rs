@@ -96,7 +96,7 @@ impl ArchitectX {
                 expiration_seconds as u64,
             )
             .await
-            .map(|token| token.into_string())
+            .map(|token| token.expose_secret().to_string())
             .map_err(|e| anyhow!("Failed to get user token: {}", e))
     }
 
@@ -1707,7 +1707,7 @@ impl AuthGatewayExtendedClient {
         self.base_client
             .get_user_token(&username.into(), &password.into(), expiration_seconds)
             .await
-            .map(|token| token.into_string())
+            .map(|token| token.expose_secret().to_string())
             .map_err(|e| anyhow!("Failed to get user token: {}", e))
     }
 
