@@ -1,3 +1,7 @@
+//! General purpose types for the ArchitectX SDK.
+//!
+//! For wire/protocol types, reference the `protocol` module.
+
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};

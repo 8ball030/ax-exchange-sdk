@@ -1,4 +1,4 @@
-use crate::protocol::ws::Timestamp;
+use crate::protocol::ws::{self, Timestamp};
 use anyhow::anyhow;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -10,6 +10,29 @@ pub enum OrderGatewayRequest {
     PlaceOrder(PlaceOrderRequest),
     #[serde(rename = "x")]
     CancelOrder(CancelOrderRequest),
+    #[serde(rename = "o")]
+    GetOpenOrders(GetOpenOrdersRequest),
+}
+
+#[repr(u8)]
+pub enum OrderGatewayRequestType {
+    PlaceOrder,
+    CancelOrder,
+    GetOpenOrders,
+}
+
+/// Expected response types from the order gateway.
+pub enum OrderGatewayResponse {
+    LoginResponse(LoginResponse),
+    PlaceOrderResponse(PlaceOrderResponse),
+    CancelOrderResponse(CancelOrderResponse),
+    GetOpenOrdersResponse(GetOpenOrdersResponse),
+}
+
+/// Expected message types from the order gateway.
+pub enum OrderGatewayMessage {
+    Event(OrderGatewayEvent),
+    Response(ws::Response<OrderGatewayResponse>),
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -69,6 +92,11 @@ pub struct CancelOrderResponse {
     #[serde(rename = "cxl_rx")]
     pub cancel_request_accepted: bool,
 }
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GetOpenOrdersRequest {}
+
+pub type GetOpenOrdersResponse = Vec<OrderDetails>;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "t")]

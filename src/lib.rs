@@ -1,4 +1,5 @@
 pub mod client;
+pub mod order_gateway;
 pub mod protocol;
 pub mod types;
 

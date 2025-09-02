@@ -11,6 +11,7 @@ auth-gateway.workspace = true
 chrono = { workspace = true }
 futures = { workspace = true }
 log = { workspace = true }
+parking_lot = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
 rust_decimal = { workspace = true }
