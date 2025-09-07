@@ -177,25 +177,28 @@ impl OrderGatewayRestClient {
     }
 
     /// Get all open orders via REST API
-    pub async fn get_open_orders(&self) -> Result<Vec<RestOrderMessage>> {
-        let request = GetOpenOrdersRequest {
+    pub async fn get_open_orders(&self) -> Result<Vec<Order>> {
+        let payload = GetOpenOrdersRequest {
             username: self.username.clone(),
         };
-
-        let response = self
+        let req = self
             .request(
                 reqwest::Method::POST,
                 "orders/get_open_orders",
-                Some(serde_json::to_value(request)?),
+                Some(serde_json::to_value(payload)?),
             )
             .await?;
-
-        if response.status().is_success() {
-            let orders_response: GetOpenOrdersResponse = response.json().await?;
-            Ok(orders_response.orders)
+        if req.status().is_success() {
+            let res: GetOpenOrdersResponse = req.json().await?;
+            let orders = res
+                .orders
+                .into_iter()
+                .map(|o| o.try_into())
+                .collect::<Result<Vec<Order>>>()?;
+            Ok(orders)
         } else {
-            let error_text = response.text().await.unwrap_or_default();
-            bail!("Get open orders failed: {}", error_text)
+            let error_text = req.text().await.unwrap_or_default();
+            bail!("get_open_orders failed: {}", error_text)
         }
     }
 

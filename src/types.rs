@@ -2,6 +2,7 @@
 //!
 //! For wire/protocol types, reference the `protocol` module.
 
+use anyhow::anyhow;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -85,7 +86,51 @@ pub struct GetOpenOrdersRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetOpenOrdersResponse {
-    pub orders: Vec<RestOrderMessage>,
+    pub orders: Vec<GetOpenOrdersResponseOrder>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetOpenOrdersResponseOrder {
+    pub order_id: String,
+    pub username: String,
+    pub symbol: String,
+    pub price: String,
+    pub quantity: i32,
+    pub executed_quantity: i32,
+    pub traded_quantity: i32, // Alias for executed_quantity
+    pub average_executed_price: Option<String>,
+    pub remaining_quantity: i32,
+    pub state: String,
+    pub side: String,
+    pub time_in_force: String,
+    pub insert_time: String,
+    pub insert_epoch_seconds: i64,
+    pub insert_epoch_nanos: u32,
+}
+
+impl TryFrom<GetOpenOrdersResponseOrder> for Order {
+    type Error = anyhow::Error;
+
+    fn try_from(value: GetOpenOrdersResponseOrder) -> Result<Self, Self::Error> {
+        let price = value.price.parse::<Decimal>()?;
+        let timestamp =
+            DateTime::from_timestamp(value.insert_epoch_seconds, value.insert_epoch_nanos as u32)
+                .ok_or_else(|| anyhow!("invalid timestamp"))?;
+        Ok(Self {
+            order_id: value.order_id,
+            username: value.username,
+            symbol: value.symbol,
+            price,
+            quantity: value.quantity,
+            filled_quantity: value.executed_quantity,
+            remaining_quantity: value.remaining_quantity,
+            order_state: value.state,
+            side: value.side,
+            time_in_force: value.time_in_force,
+            timestamp,
+            tag: None,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,25 +142,6 @@ pub struct CancelAllRequest {
 pub struct CancelAllResponse {
     pub successful_cancellations: Vec<String>,
     pub failed_cancellations: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RestOrderMessage {
-    pub order_id: String,
-    pub username: String,
-    pub symbol: String,
-    pub price: String,
-    pub quantity: i64,
-    pub executed_quantity: i64,
-    pub traded_quantity: i64, // Alias for executed_quantity
-    pub average_executed_price: Option<String>,
-    pub remaining_quantity: i64,
-    pub state: String,
-    pub side: String,
-    pub time_in_force: String,
-    pub insert_time: String,
-    pub insert_epoch_seconds: i64,
-    pub insert_epoch_nanos: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
