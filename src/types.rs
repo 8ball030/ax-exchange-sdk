@@ -24,7 +24,7 @@ pub struct Instrument {
 #[derive(Debug, Clone)]
 pub struct PlaceOrder {
     pub symbol: String,
-    pub side: String,
+    pub side: Side,
     pub quantity: i32,
     pub price: Decimal,
     pub time_in_force: String,
@@ -42,10 +42,33 @@ pub struct Order {
     pub filled_quantity: i32,
     pub remaining_quantity: i32,
     pub order_state: String,
-    pub side: String,
+    pub side: Side,
     pub time_in_force: String,
     pub timestamp: DateTime<Utc>,
     pub tag: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Side {
+    #[serde(rename = "B")]
+    Buy,
+    #[serde(rename = "S")]
+    Sell,
+}
+
+impl Side {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Buy => "B",
+            Self::Sell => "S",
+        }
+    }
+}
+
+impl std::fmt::Display for Side {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
 }
 
 // REST API Types for Order Gateway
@@ -101,7 +124,7 @@ pub struct GetOpenOrdersResponseOrder {
     pub average_executed_price: Option<String>,
     pub remaining_quantity: i32,
     pub state: String,
-    pub side: String,
+    pub side: Side,
     pub time_in_force: String,
     pub insert_time: String,
     pub insert_epoch_seconds: i64,
