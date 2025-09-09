@@ -1,6 +1,6 @@
 use crate::{
     protocol::ws::{self, Timestamp},
-    Order, Side,
+    Order, OrderState, Side,
 };
 use anyhow::{anyhow, Result};
 use rust_decimal::Decimal;
@@ -295,7 +295,7 @@ pub struct OrderDetails {
     #[serde(rename = "rq")]
     pub remaining_quantity: i32,
     #[serde(rename = "o")]
-    pub order_state: String,
+    pub order_state: OrderState,
     #[serde(rename = "d")]
     pub side: Side,
     #[serde(rename = "tif")]

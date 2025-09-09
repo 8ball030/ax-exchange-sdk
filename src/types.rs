@@ -41,7 +41,7 @@ pub struct Order {
     pub quantity: i32,
     pub filled_quantity: i32,
     pub remaining_quantity: i32,
-    pub order_state: String,
+    pub order_state: OrderState,
     pub side: Side,
     pub time_in_force: String,
     pub timestamp: DateTime<Utc>,
@@ -69,6 +69,55 @@ impl std::fmt::Display for Side {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_str())
     }
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    strum::EnumString,
+    strum::Display,
+    strum::IntoStaticStr,
+)]
+pub enum OrderState {
+    #[strum(serialize = "PENDING")]
+    #[serde(rename = "PENDING")]
+    Pending,
+    #[strum(serialize = "ACCEPTED")]
+    #[serde(rename = "ACCEPTED")]
+    Accepted,
+    #[strum(serialize = "PARTIALLY_FILLED")]
+    #[serde(rename = "PARTIALLY_FILLED")]
+    PartiallyFilled,
+    #[strum(serialize = "FILLED")]
+    #[serde(rename = "FILLED")]
+    Filled,
+    #[strum(serialize = "CANCELED")]
+    #[serde(rename = "CANCELED")]
+    Canceled,
+    #[strum(serialize = "REJECTED")]
+    #[serde(rename = "REJECTED")]
+    Rejected,
+    #[strum(serialize = "EXPIRED")]
+    #[serde(rename = "EXPIRED")]
+    Expired,
+    #[strum(serialize = "REPLACED")]
+    #[serde(rename = "REPLACED")]
+    Replaced,
+    #[strum(serialize = "DONE_FOR_DAY")]
+    #[serde(rename = "DONE_FOR_DAY")]
+    DoneForDay,
+    /// NB: unused
+    #[strum(serialize = "SNAPSHOT")]
+    #[serde(rename = "SNAPSHOT")]
+    Snapshot,
+    #[strum(serialize = "UNKNOWN")]
+    #[serde(rename = "UNKNOWN")]
+    Unknown,
 }
 
 // REST API Types for Order Gateway
@@ -123,7 +172,7 @@ pub struct GetOpenOrdersResponseOrder {
     pub traded_quantity: i32, // Alias for executed_quantity
     pub average_executed_price: Option<String>,
     pub remaining_quantity: i32,
-    pub state: String,
+    pub state: OrderState,
     pub side: Side,
     pub time_in_force: String,
     pub insert_time: String,
