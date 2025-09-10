@@ -120,6 +120,62 @@ pub enum OrderState {
     Unknown,
 }
 
+impl OrderState {
+    pub fn is_open(&self) -> bool {
+        match self {
+            Self::Accepted | Self::PartiallyFilled => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_terminal(&self) -> bool {
+        match self {
+            Self::Canceled
+            | Self::Filled
+            | Self::Rejected
+            | Self::Replaced
+            | Self::DoneForDay
+            | Self::Expired => true,
+            _ => false,
+        }
+    }
+
+    pub fn can_transition_to(&self, next_state: &Self) -> bool {
+        match self {
+            Self::Pending => matches!(
+                next_state,
+                Self::Pending
+                    | Self::Accepted
+                    | Self::Rejected
+                    | Self::Canceled
+                    | Self::Expired
+                    | Self::Replaced
+                    | Self::DoneForDay
+            ),
+            Self::Accepted => matches!(
+                next_state,
+                Self::Accepted
+                    | Self::PartiallyFilled
+                    | Self::Filled
+                    | Self::Canceled
+                    | Self::Expired
+                    | Self::Replaced
+                    | Self::DoneForDay
+            ),
+            Self::PartiallyFilled => matches!(
+                next_state,
+                Self::PartiallyFilled
+                    | Self::Filled
+                    | Self::Canceled
+                    | Self::Expired
+                    | Self::Replaced
+                    | Self::DoneForDay
+            ),
+            _ => false, // terminal states
+        }
+    }
+}
+
 // REST API Types for Order Gateway
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InsertOrderRequest {
