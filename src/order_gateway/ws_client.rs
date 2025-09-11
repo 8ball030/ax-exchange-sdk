@@ -226,7 +226,7 @@ impl OrderGatewayWsClient {
         Ok(())
     }
 
-    pub async fn place_order(&mut self, place_order: PlaceOrder) -> Result<()> {
+    pub async fn place_order(&mut self, place_order: PlaceOrder) -> Result<i32> {
         let request_id = self.next_request_id;
         self.next_request_id += 1;
         let req = protocol::order_gateway::OrderGatewayRequest::PlaceOrder(place_order.into());
@@ -242,10 +242,10 @@ impl OrderGatewayWsClient {
         self.ws.send(Message::Text(payload.into())).await?;
         self.in_flight_requests
             .insert(request_id, OrderGatewayRequestType::PlaceOrder);
-        Ok(())
+        Ok(request_id)
     }
 
-    pub async fn cancel_order(&mut self, order_id: impl AsRef<str>) -> Result<()> {
+    pub async fn cancel_order(&mut self, order_id: impl AsRef<str>) -> Result<i32> {
         let request_id = self.next_request_id;
         self.next_request_id += 1;
         let req = protocol::order_gateway::OrderGatewayRequest::CancelOrder(
@@ -265,6 +265,6 @@ impl OrderGatewayWsClient {
         self.ws.send(Message::Text(payload.into())).await?;
         self.in_flight_requests
             .insert(request_id, OrderGatewayRequestType::CancelOrder);
-        Ok(())
+        Ok(request_id)
     }
 }
