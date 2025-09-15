@@ -9,7 +9,7 @@ pub struct CreateUserRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateUserResponse {
-    pub message: String,
+    pub user_id: Uuid,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
