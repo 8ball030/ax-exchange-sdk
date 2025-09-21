@@ -2,8 +2,10 @@
 //!
 //! For wire/protocol types, reference the `protocol` module.
 
-use anyhow::anyhow;
+use anyhow::{anyhow, bail, Result};
 use chrono::{DateTime, Utc};
+use lazy_static::lazy_static;
+use regex::Regex;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -22,7 +24,34 @@ use std::collections::HashMap;
 )]
 pub struct Token(String);
 
+lazy_static! {
+    static ref TOKEN_REGEX: Regex = Regex::new(r"^[A-Za-z0-9_-]+$").unwrap();
+}
+
 impl Token {
+    /// Create a new Token with validation
+    pub fn new(token: impl Into<String>) -> Result<Self> {
+        let token = token.into();
+
+        if token.is_empty() {
+            bail!("token cannot be empty");
+        }
+
+        if token.len() < 10 {
+            bail!("token must be at least 10 characters long");
+        }
+
+        if token.len() > 256 {
+            bail!("token cannot be longer than 256 characters");
+        }
+
+        if !TOKEN_REGEX.is_match(&token) {
+            bail!("token contains invalid characters. Only letters, numbers, underscores, and hyphens are allowed");
+        }
+
+        Ok(Self(token))
+    }
+
     pub fn expose_str(&self) -> &str {
         &self.0
     }
