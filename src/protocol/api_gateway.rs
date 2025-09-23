@@ -1,4 +1,6 @@
 use crate::{Instrument, Token};
+use chrono::{DateTime, Utc};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -155,6 +157,26 @@ pub struct GetInstrumentResponse(pub Instrument);
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetInstrumentsResponse {
     pub instruments: Vec<GetInstrumentResponse>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetTransactionsRequest {
+    pub transaction_types: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Transaction {
+    pub username: String,
+    pub event_id: String,
+    pub symbol: String,
+    pub timestamp: DateTime<Utc>,
+    pub amount: Decimal,
+    pub transaction_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetTransactionsResponse {
+    pub transactions: Vec<Transaction>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
