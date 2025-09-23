@@ -209,6 +209,18 @@ pub struct Disable2faResponse {
     pub message: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SandboxDepositRequest {
+    pub symbol: String,
+    pub amount: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SandboxWithdrawalRequest {
+    pub symbol: String,
+    pub amount: Decimal,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
