@@ -1,4 +1,6 @@
+pub mod account_gateway_client;
 pub mod api_gateway;
+pub mod auth_gateway_client;
 pub mod client;
 pub mod order_gateway;
 pub mod protocol;

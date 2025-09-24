@@ -1,4 +1,10 @@
-use crate::types::*;
+use crate::protocol::order_gateway_v2::{
+    CancelAllRequest, CancelAllResponse, CancelOrderRequest, CancelOrderResponse,
+    GetOpenOrdersRequest, GetOpenOrdersResponse, InsertOrderRequest, InsertOrderResponse,
+};
+use crate::protocol::HealthResponse;
+use crate::protocol::{self, common::*, order_gateway::*};
+use crate::types::trading::Order;
 use anyhow::{bail, Result};
 use arc_swap::ArcSwapOption;
 use arcstr::ArcStr;
@@ -127,11 +133,17 @@ impl OrderGatewayRestClient {
         let order_request = InsertOrderRequest {
             username: self.username.clone(),
             symbol: symbol.to_string(),
-            side: side.to_string(),
-            quantity,
-            price: price.to_string(),
+            side: match side {
+                "B" | "Buy" => crate::types::Side::Buy,
+                "S" | "Sell" => crate::types::Side::Sell,
+                _ => return Err(anyhow::anyhow!("Invalid side: {}", side)),
+            },
+            quantity: quantity as i32,
+            price: price
+                .parse()
+                .map_err(|e| anyhow::anyhow!("Invalid price: {}", e))?,
             time_in_force: time_in_force.to_string(),
-            post_only,
+            post_only: post_only.unwrap_or(false),
             tag: tag.map(|t| t.to_string()),
         };
 
@@ -180,6 +192,7 @@ impl OrderGatewayRestClient {
     pub async fn get_open_orders(&self) -> Result<Vec<Order>> {
         let payload = GetOpenOrdersRequest {
             username: self.username.clone(),
+            symbol: None,
         };
         let req = self
             .request(
@@ -193,8 +206,8 @@ impl OrderGatewayRestClient {
             let orders = res
                 .orders
                 .into_iter()
-                .map(|o| o.try_into())
-                .collect::<Result<Vec<Order>>>()?;
+                .map(|o| o.into())
+                .collect::<Vec<Order>>();
             Ok(orders)
         } else {
             let error_text = req.text().await.unwrap_or_default();
@@ -206,6 +219,7 @@ impl OrderGatewayRestClient {
     pub async fn cancel_all_orders(&self) -> Result<CancelAllResponse> {
         let request = CancelAllRequest {
             username: self.username.clone(),
+            symbol: None,
         };
 
         let response = self
@@ -243,7 +257,7 @@ impl OrderGatewayRestClient {
     pub async fn get_order_history(
         &self,
         params: Option<HistoryParams>,
-    ) -> Result<ApiResponse<Vec<HistoricalOrder>>> {
+    ) -> Result<protocol::common::PaginatedResponse<Vec<Order>>> {
         let mut path = "orders/api/v1/orders/history".to_string();
 
         if let Some(params) = params {
@@ -282,13 +296,16 @@ impl OrderGatewayRestClient {
         let response = self.request(reqwest::Method::GET, &path, None).await?;
 
         if response.status().is_success() {
-            let history_response: crate::types::HistoryResponse = response.json().await?;
-            Ok(ApiResponse {
-                data: history_response.orders,
-                metadata: Some(ResponseMetadata {
+            let history_response: HistoryResponse<crate::types::Order> = response.json().await?;
+            Ok(protocol::common::PaginatedResponse {
+                data: history_response.data,
+                metadata: Some(protocol::common::PaginationMetadata {
+                    total_count: Some(history_response.total),
                     total: Some(history_response.total),
-                    limit: Some(history_response.limit as u32),
-                    offset: Some(history_response.offset as u32),
+                    page: None,
+                    per_page: Some(history_response.limit),
+                    limit: Some(history_response.limit),
+                    offset: Some(history_response.offset),
                 }),
             })
         } else {
@@ -301,7 +318,7 @@ impl OrderGatewayRestClient {
     pub async fn get_order_history_filtered(
         &self,
         filters: OrderHistoryFilters,
-    ) -> Result<ApiResponse<Vec<HistoricalOrder>>> {
+    ) -> Result<protocol::common::PaginatedResponse<Vec<Order>>> {
         let mut query_params = Vec::new();
 
         if let Some(symbol) = filters.symbol {
@@ -344,13 +361,16 @@ impl OrderGatewayRestClient {
         let response = self.request(reqwest::Method::GET, &path, None).await?;
 
         if response.status().is_success() {
-            let history_response: crate::types::HistoryResponse = response.json().await?;
-            Ok(ApiResponse {
-                data: history_response.orders,
-                metadata: Some(ResponseMetadata {
+            let history_response: HistoryResponse<crate::types::Order> = response.json().await?;
+            Ok(protocol::common::PaginatedResponse {
+                data: history_response.data,
+                metadata: Some(protocol::common::PaginationMetadata {
+                    total_count: Some(history_response.total),
                     total: Some(history_response.total),
-                    limit: Some(history_response.limit as u32),
-                    offset: Some(history_response.offset as u32),
+                    page: None,
+                    per_page: Some(history_response.limit),
+                    limit: Some(history_response.limit),
+                    offset: Some(history_response.offset),
                 }),
             })
         } else {

@@ -1,8 +1,12 @@
 use crate::{
-    protocol::ws::{self, Timestamp},
-    Order, OrderState, Side,
+    protocol::{
+        common::{DateRangeParams, PaginationParams},
+        ws::{self, Timestamp},
+    },
+    types::{Order, OrderState, Side},
 };
 use anyhow::{anyhow, Result};
+use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -326,6 +330,7 @@ impl TryFrom<OrderDetails> for crate::types::Order {
                 .timestamp
                 .as_datetime()
                 .ok_or_else(|| anyhow!("invalid timestamp"))?,
+            completion_time: None,
         })
     }
 }
@@ -344,4 +349,20 @@ pub struct FillDetails {
     pub side: String,
     #[serde(rename = "agg")]
     pub is_taker: bool,
+}
+
+/// Order history query filters
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrderHistoryFilters {
+    pub symbol: Option<String>,
+    pub side: Option<Side>,
+    pub order_state: Option<OrderState>,
+    pub status: Option<String>,
+    pub order_type: Option<String>,
+    pub start_time: Option<DateTime<Utc>>,
+    pub end_time: Option<DateTime<Utc>>,
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
+    pub pagination: Option<PaginationParams>,
+    pub date_range: Option<DateRangeParams>,
 }

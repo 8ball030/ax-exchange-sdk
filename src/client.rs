@@ -1,10 +1,11 @@
+use crate::account_gateway_client::AccountGatewayClient;
 use crate::api_gateway::ApiGatewayRestClient;
+use crate::auth_gateway_client::{AuthGatewayClient, AuthGatewayConfig, AuthGatewayExtendedClient};
 use crate::order_gateway::*;
 use crate::{protocol, types::*};
 use anyhow::{anyhow, bail, Result};
 use arc_swap::ArcSwapOption;
 use arcstr::ArcStr;
-use auth_gateway::{AuthGatewayClient, AuthGatewayConfig};
 use chrono::{DateTime, Utc};
 use futures::{SinkExt, StreamExt};
 use log::{debug, error, info, trace, warn};
@@ -91,7 +92,7 @@ impl ArchitectX {
                 totp: totp.map(|t| t.as_ref().to_string()),
             })
             .await?;
-        let token = res.token.expose_str().to_string();
+        let token = res.token.expose_secret().to_string();
         let expires = Utc::now() + chrono::Duration::seconds(3300);
         self.user_token
             .store(Some(Arc::new((token.into(), expires))));
@@ -146,9 +147,9 @@ impl ArchitectX {
     ) -> Result<String> {
         self.auth_client
             .get_user_token(
-                &username.as_ref().into(),
-                &password.as_ref().into(),
-                expiration_seconds as u64,
+                &Username::new_unchecked(username.as_ref()),
+                &Password::new_unchecked(password.as_ref()),
+                expiration_seconds,
             )
             .await
             .map(|token| token.expose_secret().to_string())
@@ -157,14 +158,15 @@ impl ArchitectX {
 
     pub async fn get_instrument(&self, symbol: impl AsRef<str>) -> Result<InstrumentV0> {
         let token = self.refresh_user_token(false).await?;
-        let instruments = self
+        let res = self
             .auth_client
             .get_instruments(&token.as_str().into())
             .await
             .map_err(|e| anyhow!("Failed to get instruments: {}", e))?;
 
         let symbol_str = symbol.as_ref();
-        let auth_instrument = instruments
+        let auth_instrument = res
+            .instruments
             .into_iter()
             .find(|i| i.symbol == symbol_str)
             .ok_or_else(|| anyhow!("Instrument not found: {}", symbol_str))?;
@@ -454,756 +456,6 @@ impl MarketdataClient {
         Ok(())
     }
 }
-pub struct AccountGatewayClient {
-    base_url: Url,
-    user_token: Arc<ArcSwapOption<(ArcStr, DateTime<Utc>)>>,
-}
-
-impl AccountGatewayClient {
-    pub async fn connect(
-        base_url: Url,
-        user_token: Arc<ArcSwapOption<(ArcStr, DateTime<Utc>)>>,
-    ) -> Result<Self> {
-        Ok(Self {
-            base_url,
-            user_token,
-        })
-    }
-
-    /// Helper method to get current token
-    async fn get_token(&self) -> Result<ArcStr> {
-        let token = self.user_token.load();
-        if let Some(stored) = &*token {
-            let (token, expires_at) = &**stored;
-            let now = Utc::now();
-            if *expires_at > now {
-                return Ok(token.clone());
-            }
-        }
-        bail!("Token expired or not available")
-    }
-
-    /// Helper method to make authenticated HTTP requests
-    async fn make_request(
-        &self,
-        method: reqwest::Method,
-        path: &str,
-        body: Option<Value>,
-    ) -> Result<reqwest::Response> {
-        let url = self.base_url.join(path)?;
-        debug!("{} {}", method, url);
-
-        let token = self.get_token().await?;
-
-        // Create a temporary client for requests
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
-            .build()?;
-
-        let mut request = client
-            .request(method, url)
-            .header("Authorization", token.as_str())
-            .header("Content-Type", "application/json");
-
-        if let Some(body) = body {
-            request = request.json(&body);
-        }
-
-        let response = request.send().await?;
-        Ok(response)
-    }
-
-    /// Get account balances for a user
-    pub async fn get_balances(&self, username: &str) -> Result<Vec<Balance>> {
-        let path = format!("balances?username={}", username);
-        let response = self.make_request(reqwest::Method::GET, &path, None).await?;
-
-        if response.status().is_success() {
-            let balances: Vec<Balance> = response.json().await?;
-            Ok(balances)
-        } else {
-            let error_text = response.text().await.unwrap_or_default();
-            bail!("Get balances failed: {}", error_text)
-        }
-    }
-
-    /// Get account positions for a user
-    pub async fn get_positions(&self, username: &str) -> Result<Vec<Position>> {
-        let path = format!("positions?username={}", username);
-        let response = self.make_request(reqwest::Method::GET, &path, None).await?;
-
-        if response.status().is_success() {
-            let positions: Vec<Position> = response.json().await?;
-            Ok(positions)
-        } else {
-            let error_text = response.text().await.unwrap_or_default();
-            bail!("Get positions failed: {}", error_text)
-        }
-    }
-
-    /// Get user account status
-    pub async fn get_user_status(&self, username: &str) -> Result<UserStatus> {
-        let path = format!("user-status?username={}", username);
-        let response = self.make_request(reqwest::Method::GET, &path, None).await?;
-
-        if response.status().is_success() {
-            let status: UserStatus = response.json().await?;
-            Ok(status)
-        } else {
-            let error_text = response.text().await.unwrap_or_default();
-            bail!("Get user status failed: {}", error_text)
-        }
-    }
-
-    /// Get open interest data
-    pub async fn get_open_interest(&self) -> Result<Vec<OpenInterest>> {
-        let response = self
-            .make_request(reqwest::Method::GET, "open-interest", None)
-            .await?;
-
-        if response.status().is_success() {
-            let data: Vec<OpenInterest> = response.json().await?;
-            Ok(data)
-        } else {
-            let error_text = response.text().await.unwrap_or_default();
-            bail!("Get open interest failed: {}", error_text)
-        }
-    }
-
-    /// Get user's fill history
-    pub async fn get_fills(
-        &self,
-        username: &str,
-        params: Option<HistoryParams>,
-    ) -> Result<ApiResponse<Vec<Fill>>> {
-        let mut path = format!("fills?username={}", username);
-
-        if let Some(params) = params {
-            let mut query_params = Vec::new();
-
-            if let Some(pagination) = params.pagination {
-                if let Some(limit) = pagination.limit {
-                    query_params.push(format!("limit={}", limit));
-                }
-                if let Some(offset) = pagination.offset {
-                    query_params.push(format!("offset={}", offset));
-                }
-            }
-
-            if let Some(date_range) = params.date_range {
-                if let Some(start) = date_range.start_time {
-                    query_params.push(format!("start_time={}", start.to_rfc3339()));
-                }
-                if let Some(end) = date_range.end_time {
-                    query_params.push(format!("end_time={}", end.to_rfc3339()));
-                }
-            }
-
-            if let Some(filters) = params.filters {
-                for (key, value) in filters {
-                    query_params.push(format!("{}={}", key, value));
-                }
-            }
-
-            if !query_params.is_empty() {
-                path.push('&');
-                path.push_str(&query_params.join("&"));
-            }
-        }
-
-        let response = self.make_request(reqwest::Method::GET, &path, None).await?;
-
-        if response.status().is_success() {
-            let fills: Vec<Fill> = response.json().await?;
-            Ok(ApiResponse {
-                data: fills,
-                metadata: None, // TODO: Extract from response headers if available
-            })
-        } else {
-            let error_text = response.text().await.unwrap_or_default();
-            bail!("Get fills failed: {}", error_text)
-        }
-    }
-
-    /// Get recent fills for a specific symbol
-    pub async fn get_last_fills(
-        &self,
-        username: &str,
-        symbol: &str,
-        count: u32,
-    ) -> Result<Vec<Fill>> {
-        let path = format!(
-            "last-fills?username={}&symbol={}&count={}",
-            username, symbol, count
-        );
-        let response = self.make_request(reqwest::Method::GET, &path, None).await?;
-
-        if response.status().is_success() {
-            let fills: Vec<Fill> = response.json().await?;
-            Ok(fills)
-        } else {
-            let error_text = response.text().await.unwrap_or_default();
-            bail!("Get last fills failed: {}", error_text)
-        }
-    }
-
-    /// Get funding payment history
-    pub async fn get_funding_history(
-        &self,
-        username: &str,
-        params: Option<HistoryParams>,
-    ) -> Result<ApiResponse<Vec<FundingHistory>>> {
-        let mut path = format!("funding-history?username={}", username);
-
-        if let Some(params) = params {
-            let mut query_params = Vec::new();
-
-            if let Some(pagination) = params.pagination {
-                if let Some(limit) = pagination.limit {
-                    query_params.push(format!("limit={}", limit));
-                }
-                if let Some(offset) = pagination.offset {
-                    query_params.push(format!("offset={}", offset));
-                }
-            }
-
-            if let Some(date_range) = params.date_range {
-                if let Some(start) = date_range.start_time {
-                    query_params.push(format!("start_time={}", start.to_rfc3339()));
-                }
-                if let Some(end) = date_range.end_time {
-                    query_params.push(format!("end_time={}", end.to_rfc3339()));
-                }
-            }
-
-            if !query_params.is_empty() {
-                path.push('&');
-                path.push_str(&query_params.join("&"));
-            }
-        }
-
-        let response = self.make_request(reqwest::Method::GET, &path, None).await?;
-
-        if response.status().is_success() {
-            let records: Vec<FundingHistory> = response.json().await?;
-            Ok(ApiResponse {
-                data: records,
-                metadata: None,
-            })
-        } else {
-            let error_text = response.text().await.unwrap_or_default();
-            bail!("Get funding history failed: {}", error_text)
-        }
-    }
-
-    /// Get deposit history
-    pub async fn get_deposit_history(
-        &self,
-        username: &str,
-        params: Option<HistoryParams>,
-    ) -> Result<ApiResponse<Vec<DepositRecord>>> {
-        let mut path = format!("deposit-history?username={}", username);
-
-        if let Some(params) = params {
-            let mut query_params = Vec::new();
-
-            if let Some(pagination) = params.pagination {
-                if let Some(limit) = pagination.limit {
-                    query_params.push(format!("limit={}", limit));
-                }
-                if let Some(offset) = pagination.offset {
-                    query_params.push(format!("offset={}", offset));
-                }
-            }
-
-            if let Some(date_range) = params.date_range {
-                if let Some(start) = date_range.start_time {
-                    query_params.push(format!("start_time={}", start.to_rfc3339()));
-                }
-                if let Some(end) = date_range.end_time {
-                    query_params.push(format!("end_time={}", end.to_rfc3339()));
-                }
-            }
-
-            if !query_params.is_empty() {
-                path.push('&');
-                path.push_str(&query_params.join("&"));
-            }
-        }
-
-        let response = self.make_request(reqwest::Method::GET, &path, None).await?;
-
-        if response.status().is_success() {
-            let records: Vec<DepositRecord> = response.json().await?;
-            Ok(ApiResponse {
-                data: records,
-                metadata: None,
-            })
-        } else {
-            let error_text = response.text().await.unwrap_or_default();
-            bail!("Get deposit history failed: {}", error_text)
-        }
-    }
-
-    /// Get withdrawal history
-    pub async fn get_withdrawal_history(
-        &self,
-        username: &str,
-        params: Option<HistoryParams>,
-    ) -> Result<ApiResponse<Vec<WithdrawalRecord>>> {
-        let mut path = format!("withdrawal-history?username={}", username);
-
-        if let Some(params) = params {
-            let mut query_params = Vec::new();
-
-            if let Some(pagination) = params.pagination {
-                if let Some(limit) = pagination.limit {
-                    query_params.push(format!("limit={}", limit));
-                }
-                if let Some(offset) = pagination.offset {
-                    query_params.push(format!("offset={}", offset));
-                }
-            }
-
-            if let Some(date_range) = params.date_range {
-                if let Some(start) = date_range.start_time {
-                    query_params.push(format!("start_time={}", start.to_rfc3339()));
-                }
-                if let Some(end) = date_range.end_time {
-                    query_params.push(format!("end_time={}", end.to_rfc3339()));
-                }
-            }
-
-            if !query_params.is_empty() {
-                path.push('&');
-                path.push_str(&query_params.join("&"));
-            }
-        }
-
-        let response = self.make_request(reqwest::Method::GET, &path, None).await?;
-
-        if response.status().is_success() {
-            let records: Vec<WithdrawalRecord> = response.json().await?;
-            Ok(ApiResponse {
-                data: records,
-                metadata: None,
-            })
-        } else {
-            let error_text = response.text().await.unwrap_or_default();
-            bail!("Get withdrawal history failed: {}", error_text)
-        }
-    }
-
-    /// Submit deposit request
-    pub async fn deposit(&self, request: DepositRequest) -> Result<()> {
-        let response = self
-            .make_request(
-                reqwest::Method::POST,
-                "deposit",
-                Some(serde_json::to_value(request)?),
-            )
-            .await?;
-
-        if response.status().is_success() {
-            Ok(())
-        } else {
-            let error_text = response.text().await.unwrap_or_default();
-            bail!("Deposit failed: {}", error_text)
-        }
-    }
-
-    /// Submit withdrawal request
-    pub async fn withdraw(&self, request: WithdrawRequest) -> Result<()> {
-        let response = self
-            .make_request(
-                reqwest::Method::POST,
-                "withdraw",
-                Some(serde_json::to_value(request)?),
-            )
-            .await?;
-
-        if response.status().is_success() {
-            Ok(())
-        } else {
-            let error_text = response.text().await.unwrap_or_default();
-            bail!("Withdraw failed: {}", error_text)
-        }
-    }
-
-    /// Liquidate account
-    pub async fn liquidate(&self, request: LiquidateRequest) -> Result<LiquidateResponse> {
-        let response = self
-            .make_request(
-                reqwest::Method::POST,
-                "liquidate",
-                Some(serde_json::to_value(request)?),
-            )
-            .await?;
-
-        if response.status().is_success() {
-            let liquidate_response: LiquidateResponse = response.json().await?;
-            Ok(liquidate_response)
-        } else {
-            let error_text = response.text().await.unwrap_or_default();
-            bail!("Liquidate failed: {}", error_text)
-        }
-    }
-
-    /// Get trading volume statistics
-    pub async fn get_trading_volume(
-        &self,
-        username: &str,
-        params: Option<DateRangeParams>,
-    ) -> Result<Decimal> {
-        let mut path = format!("trading-volume?username={}", username);
-
-        if let Some(params) = params {
-            let mut query_params = Vec::new();
-
-            if let Some(start) = params.start_time {
-                query_params.push(format!("start_time={}", start.to_rfc3339()));
-            }
-            if let Some(end) = params.end_time {
-                query_params.push(format!("end_time={}", end.to_rfc3339()));
-            }
-
-            if !query_params.is_empty() {
-                path.push('&');
-                path.push_str(&query_params.join("&"));
-            }
-        }
-
-        let response = self.make_request(reqwest::Method::GET, &path, None).await?;
-
-        if response.status().is_success() {
-            let volume: Decimal = response.json().await?;
-            Ok(volume)
-        } else {
-            let error_text = response.text().await.unwrap_or_default();
-            bail!("Get trading volume failed: {}", error_text)
-        }
-    }
-
-    /// Get deposit statistics
-    pub async fn get_deposit_stats(
-        &self,
-        username: &str,
-        params: Option<DateRangeParams>,
-    ) -> Result<DepositStats> {
-        let mut path = format!("deposit-stats?username={}", username);
-
-        if let Some(params) = params {
-            let mut query_params = Vec::new();
-
-            if let Some(start) = params.start_time {
-                query_params.push(format!("start_time={}", start.to_rfc3339()));
-            }
-            if let Some(end) = params.end_time {
-                query_params.push(format!("end_time={}", end.to_rfc3339()));
-            }
-
-            if !query_params.is_empty() {
-                path.push('&');
-                path.push_str(&query_params.join("&"));
-            }
-        }
-
-        let response = self.make_request(reqwest::Method::GET, &path, None).await?;
-
-        if response.status().is_success() {
-            let response_text = response.text().await?;
-            match serde_json::from_str::<DepositStats>(&response_text) {
-                Ok(stats) => Ok(stats),
-                Err(e) => {
-                    bail!(
-                        "Failed to deserialize deposit stats from response '{}': {}",
-                        response_text,
-                        e
-                    )
-                }
-            }
-        } else {
-            let error_text = response.text().await.unwrap_or_default();
-            bail!("Get deposit stats failed: {}", error_text)
-        }
-    }
-
-    /// Get withdrawal statistics
-    pub async fn get_withdrawal_stats(
-        &self,
-        username: &str,
-        params: Option<DateRangeParams>,
-    ) -> Result<WithdrawalStats> {
-        let mut path = format!("withdrawal-stats?username={}", username);
-
-        if let Some(params) = params {
-            let mut query_params = Vec::new();
-
-            if let Some(start) = params.start_time {
-                query_params.push(format!("start_time={}", start.format("%Y-%m-%d")));
-            }
-            if let Some(end) = params.end_time {
-                query_params.push(format!("end_time={}", end.format("%Y-%m-%d")));
-            }
-
-            if !query_params.is_empty() {
-                path.push('&');
-                path.push_str(&query_params.join("&"));
-            }
-        }
-
-        let response = self.make_request(reqwest::Method::GET, &path, None).await?;
-
-        if response.status().is_success() {
-            let response_text = response.text().await?;
-            match serde_json::from_str::<WithdrawalStats>(&response_text) {
-                Ok(stats) => Ok(stats),
-                Err(e) => {
-                    bail!(
-                        "Failed to deserialize withdrawal stats from response '{}': {}",
-                        response_text,
-                        e
-                    )
-                }
-            }
-        } else {
-            let error_text = response.text().await.unwrap_or_default();
-            bail!("Get withdrawal stats failed: {}", error_text)
-        }
-    }
-
-    /// Get admin statistics (requires admin privileges)
-    pub async fn get_admin_stats(&self, params: DateRangeParams) -> Result<AdminResponse> {
-        let mut query_params = Vec::new();
-
-        if let Some(start) = params.start_time {
-            query_params.push(format!("start_time={}", start.format("%Y-%m-%d")));
-        }
-        if let Some(end) = params.end_time {
-            query_params.push(format!("end_time={}", end.format("%Y-%m-%d")));
-        }
-
-        let path = if query_params.is_empty() {
-            "admin-stats".to_string()
-        } else {
-            format!("admin-stats?{}", query_params.join("&"))
-        };
-
-        let response = self.make_request(reqwest::Method::GET, &path, None).await?;
-
-        if response.status().is_success() {
-            let stats: AdminResponse = response.json().await?;
-            Ok(stats)
-        } else {
-            let error_text = response.text().await.unwrap_or_default();
-            bail!("Get admin stats failed: {}", error_text)
-        }
-    }
-}
-
-/// Extended Auth Gateway Client for API key management and additional auth operations
-pub struct AuthGatewayExtendedClient {
-    base_url: Url,
-    base_client: Arc<AuthGatewayClient>,
-    user_token: Arc<ArcSwapOption<(ArcStr, DateTime<Utc>)>>,
-}
-
-impl AuthGatewayExtendedClient {
-    pub fn new(
-        base_url: Url,
-        base_client: Arc<AuthGatewayClient>,
-        user_token: Arc<ArcSwapOption<(ArcStr, DateTime<Utc>)>>,
-    ) -> Self {
-        Self {
-            base_url,
-            base_client,
-            user_token,
-        }
-    }
-
-    /// Helper method to get current token
-    async fn get_token(&self) -> Result<ArcStr> {
-        let token = self.user_token.load();
-        if let Some(stored) = &*token {
-            let (token, expires_at) = &**stored;
-            let now = Utc::now();
-            if *expires_at > now {
-                return Ok(token.clone());
-            }
-        }
-        bail!("Token expired or not available")
-    }
-
-    /// Helper method to make authenticated HTTP requests
-    async fn make_request(
-        &self,
-        method: reqwest::Method,
-        path: &str,
-        body: Option<Value>,
-    ) -> Result<reqwest::Response> {
-        let url = self.base_url.join(path)?;
-        debug!("{} {}", method, url);
-
-        let token = self.get_token().await?;
-
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
-            .build()?;
-
-        let mut request = client
-            .request(method, url)
-            .header("Authorization", token.as_str())
-            .header("Content-Type", "application/json");
-
-        if let Some(body) = body {
-            request = request.json(&body);
-        }
-
-        let response = request.send().await?;
-        Ok(response)
-    }
-
-    /// Create a new user account
-    pub async fn create_user(&self, request: CreateUserRequest) -> Result<CreateUserResponse> {
-        let response = self
-            .make_request(
-                reqwest::Method::POST,
-                "auth/create_user",
-                Some(serde_json::to_value(request)?),
-            )
-            .await?;
-
-        if response.status().is_success() {
-            let user_response: CreateUserResponse = response.json().await?;
-            Ok(user_response)
-        } else {
-            let error_text = response.text().await.unwrap_or_default();
-            bail!("Create user failed: {}", error_text)
-        }
-    }
-
-    /// Create a new API key
-    pub async fn create_api_key(&self, request: CreateApiKeyRequest) -> Result<ApiKeyResponse> {
-        let response = self
-            .make_request(
-                reqwest::Method::POST,
-                "auth/create_api_key",
-                Some(serde_json::to_value(request)?),
-            )
-            .await?;
-
-        if response.status().is_success() {
-            let api_key_response: ApiKeyResponse = response.json().await?;
-            Ok(api_key_response)
-        } else {
-            let error_text = response.text().await.unwrap_or_default();
-            bail!("Create API key failed: {}", error_text)
-        }
-    }
-
-    /// Get all API keys for the current user
-    pub async fn get_api_keys(&self, username: &str) -> Result<Vec<String>> {
-        let request_body = serde_json::json!({
-            "username": username
-        });
-
-        let response = self
-            .make_request(
-                reqwest::Method::POST,
-                "auth/get_api_keys",
-                Some(request_body),
-            )
-            .await?;
-
-        if response.status().is_success() {
-            let api_keys_response: GetApiKeysResponse = response.json().await?;
-            Ok(api_keys_response.api_keys)
-        } else {
-            let error_text = response.text().await.unwrap_or_default();
-            bail!("Get API keys failed: {}", error_text)
-        }
-    }
-
-    /// Revoke an API key
-    pub async fn revoke_api_key(&self, api_key: &str) -> Result<RevokeApiKeyResponse> {
-        let request_body = serde_json::json!({
-            "api_key": api_key
-        });
-
-        let response = self
-            .make_request(
-                reqwest::Method::POST,
-                "auth/revoke_api_key",
-                Some(request_body),
-            )
-            .await?;
-
-        if response.status().is_success() {
-            let revoke_response: RevokeApiKeyResponse = response.json().await?;
-            Ok(revoke_response)
-        } else {
-            let error_text = response.text().await.unwrap_or_default();
-            bail!("Revoke API key failed: {}", error_text)
-        }
-    }
-
-    /// Refresh the current token
-    pub async fn refresh_token(&self) -> Result<String> {
-        // Delegate to the base client's token refresh functionality
-        let token = self.user_token.load();
-        if let Some(stored) = &*token {
-            let (token, _) = &**stored;
-            Ok(token.to_string())
-        } else {
-            bail!("No token available to refresh")
-        }
-    }
-
-    /// Validate a token
-    pub async fn validate_token(&self, token: &str) -> Result<TokenValidation> {
-        let request_body = serde_json::json!({
-            "token": token
-        });
-
-        let response = self
-            .make_request(
-                reqwest::Method::POST,
-                "auth/validate_token",
-                Some(request_body),
-            )
-            .await?;
-
-        if response.status().is_success() {
-            let validation: TokenValidation = response.json().await?;
-            Ok(validation)
-        } else {
-            let error_text = response.text().await.unwrap_or_default();
-            bail!("Validate token failed: {}", error_text)
-        }
-    }
-
-    /// Get user token (delegates to base client)
-    pub async fn get_user_token(
-        &self,
-        username: &str,
-        password: &str,
-        expiration_seconds: u64,
-    ) -> Result<String> {
-        self.base_client
-            .get_user_token(&username.into(), &password.into(), expiration_seconds)
-            .await
-            .map(|token| token.expose_secret().to_string())
-            .map_err(|e| anyhow!("Failed to get user token: {}", e))
-    }
-
-    /// Get instruments (delegates to base client)
-    pub async fn get_instruments(&self, token: &str) -> Result<Vec<auth_gateway::Instrument>> {
-        self.base_client
-            .get_instruments(&token.into())
-            .await
-            .map_err(|e| anyhow!("Failed to get instruments: {}", e))
-    }
-}
 
 /// Risk Manager Client for risk snapshots and management
 pub struct RiskManagerClient {
@@ -1278,8 +530,8 @@ impl RiskManagerClient {
     /// Get all risk snapshots (admin only)
     pub async fn get_admin_risk_snapshots(
         &self,
-        params: Option<HistoryParams>,
-    ) -> Result<ApiResponse<Vec<RiskSnapshot>>> {
+        params: Option<protocol::common::HistoryParams>,
+    ) -> Result<protocol::common::PaginatedResponse<Vec<RiskSnapshot>>> {
         let mut path = "risk_manager/admin/risk_snapshots".to_string();
 
         if let Some(params) = params {
@@ -1313,7 +565,7 @@ impl RiskManagerClient {
 
         if response.status().is_success() {
             let snapshots: Vec<RiskSnapshot> = response.json().await?;
-            Ok(ApiResponse {
+            Ok(protocol::common::PaginatedResponse {
                 data: snapshots,
                 metadata: None,
             })
@@ -1327,7 +579,7 @@ impl RiskManagerClient {
     pub async fn get_stress_test_risk_snapshots(
         &self,
         percent_move: i32,
-    ) -> Result<Vec<StressTestResult>> {
+    ) -> Result<Vec<protocol::risk_manager::StressTestResult>> {
         let response = self
             .make_request(
                 reqwest::Method::GET,
@@ -1340,7 +592,8 @@ impl RiskManagerClient {
             .await?;
 
         if response.status().is_success() {
-            let stress_results: Vec<StressTestResult> = response.json().await?;
+            let stress_results: Vec<protocol::risk_manager::StressTestResult> =
+                response.json().await?;
             Ok(stress_results)
         } else {
             let error_text = response.text().await.unwrap_or_default();
@@ -1406,13 +659,13 @@ impl SettlementGatewayClient {
     }
 
     /// Get settlement status
-    pub async fn get_status(&self) -> Result<SettlementStatus> {
+    pub async fn get_status(&self) -> Result<protocol::settlement_engine::SettlementStatus> {
         let response = self
             .make_request(reqwest::Method::GET, "settlement/status", None)
             .await?;
 
         if response.status().is_success() {
-            let status: SettlementStatus = response.json().await?;
+            let status: protocol::settlement_engine::SettlementStatus = response.json().await?;
             Ok(status)
         } else {
             let error_text = response.text().await.unwrap_or_default();
@@ -1423,8 +676,10 @@ impl SettlementGatewayClient {
     /// Get settlement history
     pub async fn get_settlement_history(
         &self,
-        params: Option<HistoryParams>,
-    ) -> Result<ApiResponse<Vec<SettlementRecord>>> {
+        params: Option<protocol::common::HistoryParams>,
+    ) -> Result<
+        protocol::common::PaginatedResponse<Vec<protocol::settlement_engine::SettlementRecord>>,
+    > {
         let mut path = "settlement/history".to_string();
 
         if let Some(params) = params {
@@ -1457,8 +712,9 @@ impl SettlementGatewayClient {
         let response = self.make_request(reqwest::Method::GET, &path, None).await?;
 
         if response.status().is_success() {
-            let records: Vec<SettlementRecord> = response.json().await?;
-            Ok(ApiResponse {
+            let records: Vec<protocol::settlement_engine::SettlementRecord> =
+                response.json().await?;
+            Ok(protocol::common::PaginatedResponse {
                 data: records,
                 metadata: None,
             })
@@ -1594,8 +850,8 @@ impl CandleServerClient {
         &self,
         symbol: &str,
         timeframe: &str,
-        params: CandleParams,
-    ) -> Result<ApiResponse<Vec<Candle>>> {
+        params: protocol::candle_server::CandleParams,
+    ) -> Result<protocol::common::PaginatedResponse<Vec<Candle>>> {
         let mut query_params = Vec::new();
 
         if let Some(start) = params.start_time {
@@ -1623,7 +879,7 @@ impl CandleServerClient {
 
         if response.status().is_success() {
             let candles: Vec<Candle> = response.json().await?;
-            Ok(ApiResponse {
+            Ok(protocol::common::PaginatedResponse {
                 data: candles,
                 metadata: None,
             })
