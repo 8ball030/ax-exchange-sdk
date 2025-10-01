@@ -2,11 +2,12 @@ use anyhow::{anyhow, bail, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(derive_more::Deref, Serialize, Deserialize)]
 pub struct Request<T> {
     #[serde(rename = "rid")]
     pub request_id: i32,
     #[serde(flatten)]
+    #[deref]
     pub request: T,
 }
 
@@ -31,6 +32,30 @@ pub struct Response<T> {
 }
 
 impl<T> Response<T> {
+    pub fn ok(request_id: i32, response: T) -> Self {
+        Self {
+            request_id,
+            response: Some(response),
+            error: None,
+        }
+    }
+
+    pub fn error(request_id: i32, code: i32, message: Option<String>) -> Self {
+        Self {
+            request_id,
+            response: None,
+            error: Some(Error { code, message }),
+        }
+    }
+
+    pub fn bad_request<S: Into<String>>(request_id: i32, message: Option<S>) -> Self {
+        Self::error(request_id, 400, message.map(Into::into))
+    }
+
+    pub fn internal_server_error<S: Into<String>>(request_id: i32, message: Option<S>) -> Self {
+        Self::error(request_id, 500, message.map(Into::into))
+    }
+
     pub fn into_inner(self) -> Result<T> {
         if let Some(e) = self.error {
             Err(anyhow!(e))
@@ -71,6 +96,14 @@ pub struct Timestamp {
 }
 
 impl Timestamp {
+    pub fn now() -> Self {
+        let now = Utc::now();
+        Self {
+            ts: now.timestamp() as i32,
+            tn: now.timestamp_subsec_nanos() as u32,
+        }
+    }
+
     pub fn as_datetime(&self) -> Option<DateTime<Utc>> {
         DateTime::from_timestamp(self.ts as i64, self.tn)
     }

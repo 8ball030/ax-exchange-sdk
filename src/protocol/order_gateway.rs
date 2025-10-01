@@ -10,7 +10,7 @@ use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "t")]
 pub enum OrderGatewayRequest {
     #[serde(rename = "p")]
@@ -82,6 +82,27 @@ pub struct PlaceOrderRequest {
     pub tag: Option<String>,
 }
 
+impl PlaceOrderRequest {
+    /// Convert this place order request into a pending order
+    pub fn into_pending_order(self, order_id: String, username: String) -> crate::types::Order {
+        crate::types::Order {
+            order_id,
+            username,
+            symbol: self.symbol,
+            side: self.side,
+            quantity: self.quantity,
+            price: self.price,
+            time_in_force: self.time_in_force,
+            tag: self.tag,
+            timestamp: Utc::now(),
+            order_state: OrderState::Pending,
+            filled_quantity: 0,
+            remaining_quantity: self.quantity,
+            completion_time: None,
+        }
+    }
+}
+
 impl From<crate::types::PlaceOrder> for PlaceOrderRequest {
     fn from(value: crate::types::PlaceOrder) -> Self {
         Self {
@@ -122,6 +143,7 @@ pub type GetOpenOrdersResponse = Vec<OrderDetails>;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "t")]
 pub enum OrderGatewayEvent {
+    // TODO: deprecate in favor of WS native ping
     #[serde(rename = "h")]
     Heartbeat(Timestamp),
     #[serde(rename = "e")]
