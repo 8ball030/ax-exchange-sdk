@@ -64,7 +64,7 @@ impl LoginResponse {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlaceOrderRequest {
     #[serde(rename = "s")]
     pub symbol: String,
@@ -102,7 +102,7 @@ pub struct PlaceOrderResponse {
     pub order_id: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CancelOrderRequest {
     #[serde(rename = "oid")]
     pub order_id: String,
@@ -114,7 +114,7 @@ pub struct CancelOrderResponse {
     pub cancel_request_accepted: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetOpenOrdersRequest {}
 
 pub type GetOpenOrdersResponse = Vec<OrderDetails>;
