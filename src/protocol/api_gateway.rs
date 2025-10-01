@@ -240,6 +240,21 @@ pub struct SandboxWithdrawalRequest {
     pub amount: Decimal,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetPositionsResponse {
+    pub positions: Vec<Position>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Position {
+    pub user_id: Uuid,
+    pub symbol: String,
+    pub open_quantity: i64,
+    pub open_notional: Decimal,
+    pub timestamp: DateTime<Utc>,
+    pub realized_pnl: Decimal,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
