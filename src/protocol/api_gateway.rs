@@ -191,7 +191,7 @@ pub struct GetTransactionsRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Transaction {
-    pub username: String,
+    pub user_id: Uuid,
     pub event_id: String,
     pub symbol: String,
     pub timestamp: DateTime<Utc>,
@@ -259,6 +259,17 @@ pub struct Position {
     pub open_notional: Decimal,
     pub timestamp: DateTime<Utc>,
     pub realized_pnl: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetBalancesResponse {
+    pub balances: Vec<Balance>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Balance {
+    pub symbol: String,
+    pub amount: Decimal,
 }
 
 #[cfg(test)]
