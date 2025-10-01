@@ -3,10 +3,13 @@ use crate::types::PlaceOrder;
 use anyhow::{anyhow, bail, Result};
 use futures::{SinkExt, StreamExt};
 use log::{debug, error, info, trace, warn};
-use serde_json::json;
 use std::collections::HashMap;
 use tokio::net::TcpStream;
-use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
+use tokio_tungstenite::{
+    connect_async,
+    tungstenite::{handshake::client::generate_key, http::Request, Message},
+    MaybeTlsStream, WebSocketStream,
+};
 use url::Url;
 
 pub type SendCallback = Box<dyn Fn(&str) + Send + Sync>;
@@ -21,7 +24,6 @@ pub type ReceiveCallback = Box<dyn Fn(&str) + Send + Sync>;
 /// be a login response.
 pub struct OrderGatewayWsClient {
     ws: WebSocketStream<MaybeTlsStream<TcpStream>>,
-    logged_in: bool,
     next_request_id: i32,
     in_flight_requests: HashMap<i32, OrderGatewayRequestType>,
     on_send: Option<SendCallback>,
@@ -30,11 +32,7 @@ pub struct OrderGatewayWsClient {
 
 impl OrderGatewayWsClient {
     /// Connect to an order gateway and login with the provided credentials.
-    pub async fn connect(
-        base_url: Url,
-        username: impl AsRef<str>,
-        token: impl AsRef<str>,
-    ) -> Result<Self> {
+    pub async fn connect(base_url: Url, token: impl AsRef<str>) -> Result<Self> {
         // derive ws url
         let mut ws_base_url = base_url.clone();
         let res = match base_url.scheme() {
@@ -43,27 +41,30 @@ impl OrderGatewayWsClient {
             _ => bail!("invalid url scheme"),
         };
         res.map_err(|_| anyhow!("invalid url scheme"))?;
-        let order_gateway_url = ws_base_url.join("orders/ws")?.to_string();
+        let order_gateway_url = ws_base_url.join("orders/ws")?;
 
         // connect to order gateway
         info!("connecting to {order_gateway_url}");
-        let (mut ws, _) = connect_async(order_gateway_url).await?;
-
-        // send login request
-        let req = json!({
-            "rid": 1,
-            "t": "a",
-            "u": username.as_ref().to_string(),
-            "k": token.as_ref().to_string(),
-        });
-        let payload = serde_json::to_string(&req)?;
-        trace!("sending login request: {payload}");
-        ws.send(Message::Text(payload.into())).await?;
+        let authority = order_gateway_url.authority();
+        let host = authority
+            .find('@')
+            .map(|idx| authority.split_at(idx + 1).1)
+            .unwrap_or_else(|| authority);
+        let request = Request::builder()
+            .method("GET")
+            .uri(order_gateway_url.as_str())
+            .header("Host", host)
+            .header("Connection", "Upgrade")
+            .header("Upgrade", "websocket")
+            .header("Sec-WebSocket-Version", "13")
+            .header("Sec-WebSocket-Key", generate_key())
+            .header("Authorization", token.as_ref())
+            .body(())?;
+        let (ws, _) = connect_async(request).await?;
 
         Ok(Self {
             ws,
-            logged_in: false,
-            next_request_id: 2,
+            next_request_id: 1,
             in_flight_requests: HashMap::new(),
             on_send: None,
             on_receive: None,
@@ -152,11 +153,7 @@ impl OrderGatewayWsClient {
                     .map(|r| $v(r))
             };
         }
-        let parsed = if res.request_id == 1 {
-            let parsed = try_parse!(res, LoginResponse, OrderGatewayResponse::LoginResponse);
-            self.logged_in = true;
-            parsed
-        } else if let Some(req_type) = self.in_flight_requests.remove(&res.request_id) {
+        let parsed = if let Some(req_type) = self.in_flight_requests.remove(&res.request_id) {
             match req_type {
                 OrderGatewayRequestType::PlaceOrder => {
                     try_parse!(
@@ -199,10 +196,6 @@ impl OrderGatewayWsClient {
             }
             _ => {}
         }
-    }
-
-    pub fn is_logged_in(&self) -> bool {
-        self.logged_in
     }
 
     pub async fn get_open_orders(&mut self) -> Result<()> {

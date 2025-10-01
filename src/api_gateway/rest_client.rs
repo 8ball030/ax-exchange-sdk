@@ -2,7 +2,7 @@ use crate::protocol::api_gateway::*;
 use crate::protocol::{ErrorResponse, HealthResponse};
 use anyhow::{anyhow, bail, Result};
 use chrono::{DateTime, Utc};
-use log::{debug, error};
+use log::{debug, trace};
 use reqwest;
 use serde::{de::DeserializeOwned, Serialize};
 use std::time::Duration;
@@ -51,37 +51,45 @@ impl ApiGatewayRestClient {
         &self,
         method: reqwest::Method,
         path: &str,
-        body: Option<T>,
+        params: Option<T>,
         auth: bool,
     ) -> Result<R> {
         let url = self.base_url.join(path)?;
-        debug!("{} {}", method, url);
+        debug!("=> {} {}", method, url);
 
-        let mut request = self
+        let mut req = self
             .client
-            .request(method, url)
+            .request(method.clone(), url.clone())
             .header("Content-Type", "application/json");
 
         if auth {
             let token = self.token()?;
-            request = request.header("Authorization", format!("{}", token));
+            req = req.header("Authorization", format!("{}", token));
         }
 
-        if let Some(body) = body {
-            request = request.json(&body);
+        if let Some(params) = params {
+            if method == reqwest::Method::POST
+                || method == reqwest::Method::PUT
+                || method == reqwest::Method::PATCH
+            {
+                req = req.json(&params);
+            } else {
+                req = req.query(&params);
+            }
         }
 
-        let response = request.send().await?;
+        let res = req.send().await?;
+        let res_status = res.status();
+        let res_text = res.text().await?;
+        trace!("<= {method} {url}: {res_status}");
+        trace!("<= {res_text}");
 
-        if response.status().is_success() {
-            Ok(response.json().await?)
+        if res_status.is_success() {
+            Ok(serde_json::from_str(&res_text)?)
         } else {
-            match response.json::<ErrorResponse>().await {
-                Ok(error_response) => {
-                    error!("API error: {}", error_response.error);
-                    Err(anyhow!(error_response.error))
-                }
-                Err(e) => Err(anyhow!("failed to parse error response: {:?}", e)),
+            match serde_json::from_str::<ErrorResponse>(&res_text) {
+                Ok(error_response) => Err(anyhow!(error_response.error)),
+                Err(e) => Err(anyhow!("while parsing error response: {e:?}")),
             }
         }
     }

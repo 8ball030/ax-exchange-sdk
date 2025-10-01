@@ -22,6 +22,8 @@ use url::Url;
 #[derive(Clone)]
 pub struct ArchitectX {
     base_url: Url,
+    api_gateway_base_url: Url,
+    order_gateway_base_url: Url,
     username: Option<String>,
     password: Option<String>,
     user_token: Arc<ArcSwapOption<(ArcStr, DateTime<Utc>)>>,
@@ -33,13 +35,23 @@ impl ArchitectX {
         base_url: Url,
         username: Option<impl AsRef<str>>,
         password: Option<impl AsRef<str>>,
-    ) -> Self {
-        Self {
-            base_url,
+    ) -> Result<Self> {
+        Ok(Self {
+            base_url: base_url.clone(),
+            api_gateway_base_url: base_url.join("api/")?,
+            order_gateway_base_url: base_url.join("orders/")?,
             username: username.map(|u| u.as_ref().to_string()),
             password: password.map(|p| p.as_ref().to_string()),
             user_token: Arc::new(ArcSwapOption::const_empty()),
-        }
+        })
+    }
+
+    pub fn set_api_gateway_base_url(&mut self, base_url: Url) {
+        self.api_gateway_base_url = base_url;
+    }
+
+    pub fn set_order_gateway_base_url(&mut self, base_url: Url) {
+        self.order_gateway_base_url = base_url;
     }
 
     fn username(&self) -> Result<String> {
@@ -61,7 +73,7 @@ impl ArchitectX {
         totp: Option<impl AsRef<str>>,
     ) -> Result<ArcStr> {
         use crate::protocol::api_gateway::{GetUserTokenAuthMethod, GetUserTokenRequest};
-        let client = ApiGatewayRestClient::new(self.base_url.clone())?;
+        let client = ApiGatewayRestClient::new(self.api_gateway_base_url.clone())?;
         let res = client
             .get_user_token(GetUserTokenRequest {
                 auth: GetUserTokenAuthMethod::UsernamePassword {
@@ -77,20 +89,6 @@ impl ArchitectX {
         self.user_token
             .store(Some(Arc::new((token.clone(), expires))));
         Ok(token)
-    }
-
-    pub fn api_gateway(&self) -> Result<ApiGatewayRestClient> {
-        let mut client = ApiGatewayRestClient::new(self.base_url.clone())?;
-        let auth = self.user_token.load();
-        if let Some(token) = &*auth {
-            let (token, expires_at) = &**token;
-            if *expires_at > Utc::now() {
-                client.set_token(token.as_str().to_string(), expires_at.clone());
-            } else {
-                warn!("while creating api gateway client: token expired");
-            }
-        }
-        Ok(client)
     }
 
     pub async fn refresh_user_token(&self, force: bool) -> Result<ArcStr> {
@@ -113,21 +111,43 @@ impl ArchitectX {
         self.login(username, password, None::<&str>).await
     }
 
+    pub fn api_gateway(&self) -> Result<ApiGatewayRestClient> {
+        let mut client = ApiGatewayRestClient::new(self.api_gateway_base_url.clone())?;
+        let auth = self.user_token.load();
+        if let Some(token) = &*auth {
+            let (token, expires_at) = &**token;
+            if *expires_at > Utc::now() {
+                client.set_token(token.as_str().to_string(), expires_at.clone());
+            } else {
+                warn!("while creating api gateway client: token expired");
+            }
+        }
+        Ok(client)
+    }
+
+    pub fn order_gateway(&self) -> Result<OrderGatewayRestClient> {
+        let mut client = OrderGatewayRestClient::new(self.order_gateway_base_url.clone())?;
+        let auth = self.user_token.load();
+        if let Some(token) = &*auth {
+            let (token, expires_at) = &**token;
+            if *expires_at > Utc::now() {
+                client.set_token(token.as_str().to_string(), expires_at.clone());
+            } else {
+                warn!("while creating order gateway client: token expired");
+            }
+        }
+        Ok(client)
+    }
+
+    pub async fn order_gateway_ws(&self) -> Result<OrderGatewayWsClient> {
+        let token = self.refresh_user_token(false).await?;
+        OrderGatewayWsClient::connect(self.base_url.clone(), token).await
+    }
+
     pub async fn marketdata_client(&self) -> Result<MarketdataClient> {
         let username = self.username()?;
         let token = self.refresh_user_token(false).await?;
         MarketdataClient::connect(self.base_url.clone(), username, token).await
-    }
-
-    pub async fn order_gateway_ws(&self) -> Result<OrderGatewayWsClient> {
-        let username = self.username()?;
-        let token = self.refresh_user_token(false).await?;
-        OrderGatewayWsClient::connect(self.base_url.clone(), username, token).await
-    }
-
-    pub fn order_gateway(&self) -> Result<OrderGatewayRestClient> {
-        let username = self.username()?;
-        OrderGatewayRestClient::new(self.base_url.clone(), username, self.user_token.clone())
     }
 
     /// Get risk manager client
