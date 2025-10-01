@@ -21,6 +21,7 @@ pub struct InstrumentV0 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct Instrument {
     pub symbol: String,
     pub state: InstrumentState,
@@ -48,6 +49,7 @@ pub struct Instrument {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum InstrumentState {
     /// The instrument is available to place orders and modify them
@@ -95,6 +97,7 @@ pub struct Order {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub enum Side {
     #[serde(rename = "B")]
     Buy,
@@ -129,6 +132,7 @@ impl std::fmt::Display for Side {
     strum::Display,
     strum::IntoStaticStr,
 )]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub enum OrderState {
     #[strum(serialize = "PENDING")]
     #[serde(rename = "PENDING")]

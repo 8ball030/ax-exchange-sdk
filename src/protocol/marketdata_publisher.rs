@@ -18,23 +18,32 @@ pub enum MarketdataEvent {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct Ticker {
     #[serde(flatten)]
     pub timestamp: Timestamp,
+    /// Instrument symbol; e.g. GBPUSD-PERP, EURUSD-PERP
     #[serde(rename = "s")]
     pub symbol: String,
+    /// Last trade price in USD
     #[serde(rename = "p")]
     pub last_trade_price: Decimal,
+    /// Last trade quantity in contracts
     #[serde(rename = "q")]
     pub last_trade_quantity: i32,
+    /// Session open price in USD
     #[serde(rename = "o")]
     pub session_open_price: Decimal,
+    /// Session low price in USD
     #[serde(rename = "l")]
     pub session_low_price: Decimal,
+    /// Session high price in USD
     #[serde(rename = "h")]
     pub session_high_price: Decimal,
+    /// Total volume in contracts
     #[serde(rename = "v")]
     pub total_volume: i32,
+    /// Open interest in contracts
     #[serde(rename = "oi")]
     pub open_interest: i32,
 }

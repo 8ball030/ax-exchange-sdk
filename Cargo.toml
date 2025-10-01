@@ -24,4 +24,5 @@ strum = { workspace = true }
 tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
 url = { workspace = true }
+utoipa = { workspace = true, optional = true }
 uuid = { workspace = true }

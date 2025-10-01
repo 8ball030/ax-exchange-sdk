@@ -154,6 +154,7 @@ impl PartialEq for Password {
 #[derive(
     Default, derive_more::From, derive_more::FromStr, Clone, Eq, Hash, Serialize, Deserialize,
 )]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct Token(String);
 
 impl Token {

@@ -12,12 +12,14 @@ pub mod ws;
 
 /// Standard error response format
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct ErrorResponse {
     pub error: String,
 }
 
 /// Service health response
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct HealthResponse {
     pub status: String,
     pub timestamp: DateTime<Utc>,

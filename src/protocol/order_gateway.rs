@@ -66,19 +66,27 @@ impl LoginResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct PlaceOrderRequest {
+    /// Order symbol; e.g. GBPUSD-PERP, EURUSD-PERP
     #[serde(rename = "s")]
     pub symbol: String,
+    /// Order side; buying ("B") or selling ("S")
     #[serde(rename = "d")]
     pub side: Side,
+    /// Order quantity in contracts; e.g. 100, 1000
     #[serde(rename = "q")]
     pub quantity: i32,
+    /// Order price in USD as decimal string; e.g. "1.2345"
     #[serde(rename = "p")]
     pub price: Decimal,
+    /// Order time in force; e.g. "GTC", "IOC", "DAY"
     #[serde(rename = "tif")]
     pub time_in_force: String,
+    /// Whether the order is post-only (maker-or-cancel)
     #[serde(rename = "po")]
     pub post_only: bool,
+    /// Optional order tag; maximum 10 alphanumeric characters
     #[serde(rename = "tag", skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
 }
@@ -119,24 +127,31 @@ impl From<crate::types::PlaceOrder> for PlaceOrderRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct PlaceOrderResponse {
+    /// Order ID of the placed order; e.g. "ORD-1234567890"
     #[serde(rename = "oid")]
     pub order_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct CancelOrderRequest {
+    /// Order ID to cancel; e.g. "ORD-1234567890"
     #[serde(rename = "oid")]
     pub order_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct CancelOrderResponse {
+    /// Whether the cancel request has been accepted; e.g. true, false
     #[serde(rename = "cxl_rx")]
     pub cancel_request_accepted: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
 pub struct GetOpenOrdersRequest {}
 
 pub type GetOpenOrdersResponse = Vec<OrderDetails>;
@@ -306,6 +321,7 @@ pub struct OrderFilled {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct OrderDetails {
     #[serde(rename = "oid")]
     pub order_id: String,
