@@ -97,6 +97,7 @@ pub struct Order {
 }
 
 #[derive(Debug, derive_more::Display, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub enum Side {
     #[serde(rename = "B")]
@@ -117,6 +118,7 @@ pub enum Side {
     strum::Display,
     strum::IntoStaticStr,
 )]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub enum OrderState {
     #[strum(serialize = "PENDING")]

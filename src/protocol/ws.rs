@@ -3,6 +3,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 #[derive(derive_more::Deref, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct Request<T> {
     #[serde(rename = "rid")]
     pub request_id: i32,
@@ -12,6 +13,7 @@ pub struct Request<T> {
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct Response<T> {
     #[serde(rename = "rid", alias = "request_id")]
     pub request_id: i32,
@@ -68,6 +70,7 @@ impl<T> Response<T> {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct Error {
     pub code: i32,
     #[serde(rename = "msg", default, skip_serializing_if = "Option::is_none")]
@@ -90,6 +93,7 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {}
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct Timestamp {
     pub ts: i32,

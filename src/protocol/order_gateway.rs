@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(tag = "t")]
 pub enum OrderGatewayRequest {
     #[serde(rename = "p")]
@@ -31,6 +32,7 @@ pub enum OrderGatewayRequestType {
 
 /// Expected response types from the order gateway.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(untagged)]
 pub enum OrderGatewayResponse {
     LoginResponse(LoginResponse),
@@ -46,6 +48,7 @@ pub enum OrderGatewayMessage {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct LoginResponse {
     #[serde(rename = "li")]
     pub logged_in: String,
@@ -66,6 +69,7 @@ impl LoginResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct PlaceOrderRequest {
     /// Order symbol; e.g. GBPUSD-PERP, EURUSD-PERP
@@ -127,6 +131,7 @@ impl From<crate::types::PlaceOrder> for PlaceOrderRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct PlaceOrderResponse {
     /// Order ID of the placed order; e.g. "ORD-1234567890"
@@ -135,6 +140,7 @@ pub struct PlaceOrderResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct CancelOrderRequest {
     /// Order ID to cancel; e.g. "ORD-1234567890"
@@ -143,6 +149,7 @@ pub struct CancelOrderRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct CancelOrderResponse {
     /// Whether the cancel request has been accepted; e.g. true, false
@@ -151,12 +158,14 @@ pub struct CancelOrderResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
 pub struct GetOpenOrdersRequest {}
 
 pub type GetOpenOrdersResponse = Vec<OrderDetails>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(tag = "t")]
 pub enum OrderGatewayEvent {
     // TODO: deprecate in favor of WS native ping
@@ -217,6 +226,7 @@ impl OrderGatewayEvent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct CancelRejected {
     #[serde(flatten)]
     pub timestamp: Timestamp,
@@ -229,6 +239,7 @@ pub struct CancelRejected {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct OrderAcked {
     #[serde(flatten)]
     pub timestamp: Timestamp,
@@ -239,6 +250,7 @@ pub struct OrderAcked {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct OrderCanceled {
     #[serde(flatten)]
     pub timestamp: Timestamp,
@@ -253,6 +265,7 @@ pub struct OrderCanceled {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct OrderReplacedOrAmended {
     #[serde(flatten)]
     pub timestamp: Timestamp,
@@ -263,6 +276,7 @@ pub struct OrderReplacedOrAmended {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct OrderRejected {
     #[serde(flatten)]
     pub timestamp: Timestamp,
@@ -277,6 +291,7 @@ pub struct OrderRejected {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct OrderExpired {
     #[serde(flatten)]
     pub timestamp: Timestamp,
@@ -287,6 +302,7 @@ pub struct OrderExpired {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct OrderDoneForDay {
     #[serde(flatten)]
     pub timestamp: Timestamp,
@@ -297,6 +313,7 @@ pub struct OrderDoneForDay {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct OrderPartiallyFilled {
     #[serde(flatten)]
     pub timestamp: Timestamp,
@@ -304,11 +321,13 @@ pub struct OrderPartiallyFilled {
     pub execution_id: String,
     #[serde(rename = "o")]
     pub order: OrderDetails,
+    // TODO: retag as "x"
     #[serde(rename = "xs")]
     pub fill: FillDetails,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct OrderFilled {
     #[serde(flatten)]
     pub timestamp: Timestamp,
@@ -316,11 +335,13 @@ pub struct OrderFilled {
     pub execution_id: String,
     #[serde(rename = "o")]
     pub order: OrderDetails,
+    // TODO: retag as "x"
     #[serde(rename = "xs")]
     pub fill: FillDetails,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct OrderDetails {
     #[serde(rename = "oid")]
@@ -397,6 +418,7 @@ impl From<crate::types::Order> for OrderDetails {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct FillDetails {
     #[serde(rename = "tid")]
     pub trade_id: String,
