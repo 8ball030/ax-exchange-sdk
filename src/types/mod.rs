@@ -3,7 +3,6 @@
 //! This module contains all type definitions organized into logical submodules.
 
 pub mod auth;
-pub mod ep3;
 pub mod order_id;
 pub mod orderbook;
 pub mod risk;
@@ -14,7 +13,6 @@ pub mod trading;
 
 // Re-export commonly used types for convenience
 pub use auth::{ApiKey, Password, Token, Username};
-pub use ep3::{Ep3Account, Ep3Firm, Ep3Username};
 pub use order_id::OrderId;
 pub use orderbook::{Orderbook, OrderbookLevel};
 pub use risk::{

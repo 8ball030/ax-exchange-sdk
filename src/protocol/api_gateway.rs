@@ -144,8 +144,6 @@ pub struct DecodeTokenRequest {
 pub struct DecodeTokenResponse {
     pub user_id: Uuid,
     pub username: String,
-    pub ep3_username: String,
-    pub ep3_account: String,
     pub is_admin_token: bool,
     pub can_place_orders: bool,
     pub enabled_2fa: bool,
@@ -162,9 +160,6 @@ pub struct GetUsersResponse {
 pub struct GetUserResponse {
     pub id: Uuid,
     pub username: String,
-    // CR alee: consider whether to remove these fields
-    pub ep3_username: String,
-    pub ep3_account: String,
     /// NB: will be deprecated soon; use is_onboarded, is_close_only, is_frozen instead
     pub is_valid: bool,
     pub is_onboarded: bool,
