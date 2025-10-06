@@ -354,3 +354,45 @@ mod tests {
         );
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
+pub struct GetCandlesRequest {
+    pub symbol: String,
+    pub start_timestamp_ns: u64,
+    pub end_timestamp_ns: u64,
+    pub candle_width: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct GetCandlesResponse {
+    pub candles: Vec<Candle>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct Candle {
+    pub symbol: String,
+    pub low: Decimal,
+    pub high: Decimal,
+    pub open: Decimal,
+    pub close: Decimal,
+    pub buy_volume: i64,
+    pub sell_volume: i64,
+    pub volume: i64,
+    pub timestamp_ns: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
+pub struct GetLastCandleRequest {
+    pub symbol: String,
+    pub candle_width: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct GetLastCandleResponse {
+    pub candle: Candle,
+}
