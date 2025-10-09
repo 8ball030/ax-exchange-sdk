@@ -2,6 +2,7 @@ use crate::types::{Instrument, Token};
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -328,6 +329,38 @@ pub struct GetBalancesResponse {
 pub struct Balance {
     pub symbol: String,
     pub amount: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct GetUserRiskSnapshotResponse {
+    pub snapshot: UserRiskSnapshot,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct SymbolRiskSnapshot {
+    pub initial_margin_required_position: Decimal,
+    pub initial_margin_required_open_orders: Decimal,
+    pub initial_margin_required_total: Decimal,
+    pub maintenance_margin_required: Decimal,
+    pub unrealized_pnl: Decimal,
+    pub liquidation_price: Option<Decimal>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct UserRiskSnapshot {
+    pub per_symbol: HashMap<String, SymbolRiskSnapshot>,
+    pub initial_margin_required_for_positions: Decimal,
+    pub initial_margin_required_for_open_orders: Decimal,
+    pub initial_margin_required_total: Decimal,
+    pub maintenance_margin_required: Decimal,
+    pub unrealized_pnl: Decimal,
+    pub equity: Decimal,
+    pub initial_margin_available: Decimal,
+    pub maintenance_margin_available: Decimal,
+    pub balance_usd: Decimal,
 }
 
 #[cfg(test)]
