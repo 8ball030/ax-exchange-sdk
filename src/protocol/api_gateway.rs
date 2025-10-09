@@ -313,6 +313,8 @@ pub struct Fill {
     pub symbol: String,
     pub price: Decimal,
     pub quantity: i64,
+    pub aggressor: bool,
+    pub fee: Decimal,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
