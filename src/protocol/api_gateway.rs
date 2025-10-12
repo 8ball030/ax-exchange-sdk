@@ -136,6 +136,7 @@ pub struct WhoAmIResponse {
     pub is_onboarded: bool,
     pub is_close_only: bool,
     pub is_frozen: bool,
+    pub is_admin: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -165,11 +166,10 @@ pub struct GetUsersResponse {
 pub struct GetUserResponse {
     pub id: Uuid,
     pub username: String,
-    /// NB: will be deprecated soon; use is_onboarded, is_close_only, is_frozen instead
-    pub is_valid: bool,
     pub is_onboarded: bool,
     pub is_close_only: bool,
     pub is_frozen: bool,
+    pub is_admin: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -338,9 +338,12 @@ pub struct GetUserRiskSnapshotResponse {
     pub snapshot: UserRiskSnapshot,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct SymbolRiskSnapshot {
+    pub open_quantity: Decimal,
+    pub open_notional: Decimal,
+    pub average_price: Option<Decimal>,
     pub initial_margin_required_position: Decimal,
     pub initial_margin_required_open_orders: Decimal,
     pub initial_margin_required_total: Decimal,

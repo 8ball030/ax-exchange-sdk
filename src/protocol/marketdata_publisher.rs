@@ -1,4 +1,4 @@
-use crate::protocol::ws::Timestamp;
+use crate::{protocol::ws::Timestamp, InstrumentState};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -46,6 +46,9 @@ pub struct Ticker {
     /// Open interest in contracts
     #[serde(rename = "oi")]
     pub open_interest: i32,
+    /// Instrument state
+    #[serde(rename = "i")]
+    pub state: InstrumentState,
 }
 
 pub type L1BookUpdate = L2BookUpdate;

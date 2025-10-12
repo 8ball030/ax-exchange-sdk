@@ -64,6 +64,8 @@ pub enum InstrumentState {
     Suspended,
     /// The instrument has been delisted.  This state is terminal.
     Delisted,
+    /// The instrument status is unknown.
+    Unknown,
 }
 
 #[derive(Debug, Clone)]
