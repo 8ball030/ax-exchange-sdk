@@ -48,7 +48,7 @@ pub struct Ticker {
     pub open_interest: i32,
     /// Instrument state
     #[serde(rename = "i")]
-    pub state: InstrumentState,
+    pub instrument_state: InstrumentState,
 }
 
 pub type L1BookUpdate = L2BookUpdate;
