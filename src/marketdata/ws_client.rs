@@ -20,11 +20,7 @@ pub struct MarketdataWsClient {
 }
 
 impl MarketdataWsClient {
-    pub async fn connect(
-        base_url: Url,
-        username: impl AsRef<str>,
-        token: impl AsRef<str>,
-    ) -> Result<Self> {
+    pub async fn connect(base_url: Url, token: impl AsRef<str>) -> Result<Self> {
         // derive ws url
         let mut ws_base_url = base_url.clone();
         let res = match base_url.scheme() {
@@ -43,7 +39,6 @@ impl MarketdataWsClient {
         let req = json!({
             "request_id": 1,
             "type": "login",
-            "username": username.as_ref().to_string(),
             "token": token.as_ref().to_string(),
         });
         let payload = serde_json::to_string(&req)?;

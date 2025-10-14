@@ -47,13 +47,6 @@ impl ArchitectX {
         self.order_gateway_base_url = base_url;
     }
 
-    fn username(&self) -> Result<String> {
-        self.username
-            .as_ref()
-            .ok_or_else(|| anyhow!("no username provided"))
-            .cloned()
-    }
-
     /// Login with username and password.  If the account has 2FA enabled,
     /// you will also need to provide a TOTP code.
     ///
@@ -138,9 +131,8 @@ impl ArchitectX {
     }
 
     pub async fn marketdata_ws(&self) -> Result<MarketdataWsClient> {
-        let username = self.username()?;
         let token = self.refresh_user_token(false).await?;
-        MarketdataWsClient::connect(self.base_url.clone(), username, token).await
+        MarketdataWsClient::connect(self.base_url.clone(), token).await
     }
 
     /// Get risk manager client
