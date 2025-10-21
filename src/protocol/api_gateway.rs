@@ -532,3 +532,30 @@ pub struct ExchangeStats {
     pub open_interest: Decimal,
     pub users_count: i64,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct CreateInviteRequest {
+    /// Optional expiration time for the invite code.
+    pub not_valid_after: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct CreateInviteResponse {
+    pub code: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct SignupRequest {
+    pub username: String,
+    pub password: String,
+    pub invite_code: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct SignupResponse {
+    pub user_id: Uuid,
+}
