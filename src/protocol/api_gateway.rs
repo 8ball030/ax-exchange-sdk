@@ -1,4 +1,7 @@
-use crate::types::{Instrument, Token};
+use crate::{
+    protocol::marketdata_publisher::Ticker,
+    types::{Instrument, Token},
+};
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -59,12 +62,6 @@ pub struct CreateApiKeyRequest {
 pub struct CreateApiKeyResponse {
     pub api_key: String,
     pub secret: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
-pub struct GetApiKeysRequest {
-    pub username: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -174,6 +171,12 @@ pub struct GetUsersResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::IntoParams, utoipa::ToSchema))]
+pub struct GetUserRequest {
+    pub username: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct GetUserResponse {
     pub id: Uuid,
@@ -186,10 +189,17 @@ pub struct GetUserResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
-pub struct UpdateUserStatusRequest {
+pub struct UpdateUserRequest {
+    pub username: String,
     pub is_onboarded: Option<bool>,
     pub is_close_only: Option<bool>,
     pub is_frozen: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
+pub struct GetUserRiskProfileRequest {
+    pub username: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -207,6 +217,12 @@ pub struct GetUserRiskProfileResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
+pub struct GetInstrumentRequest {
+    pub symbol: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 #[serde(transparent)]
 pub struct GetInstrumentResponse(pub Instrument);
@@ -221,6 +237,24 @@ impl GetInstrumentResponse {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct GetInstrumentsResponse {
     pub instruments: Vec<GetInstrumentResponse>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
+pub struct GetTickerRequest {
+    pub symbol: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct GetTickerResponse {
+    pub ticker: Ticker,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct GetTickersResponse {
+    pub tickers: Vec<Ticker>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

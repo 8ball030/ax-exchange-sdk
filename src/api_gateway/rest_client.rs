@@ -105,13 +105,8 @@ impl ApiGatewayRestClient {
         &self,
         request: GetUserTokenRequest,
     ) -> Result<GetUserTokenResponse> {
-        self.request(
-            reqwest::Method::POST,
-            "get_user_token",
-            Some(request),
-            false,
-        )
-        .await
+        self.request(reqwest::Method::POST, "authenticate", Some(request), false)
+            .await
     }
 
     pub async fn get_instruments(&self) -> Result<GetInstrumentsResponse> {
@@ -120,7 +115,7 @@ impl ApiGatewayRestClient {
     }
 
     pub async fn get_instrument(&self, symbol: &str) -> Result<GetInstrumentResponse> {
-        let path = format!("instruments/{}", symbol);
+        let path = format!("instrument?symbol={}", symbol);
         self.request::<(), GetInstrumentResponse>(reqwest::Method::GET, &path, None, false)
             .await
     }
@@ -133,7 +128,7 @@ impl ApiGatewayRestClient {
     ) -> Result<ChangePasswordResponse> {
         self.request(
             reqwest::Method::POST,
-            "change_password",
+            "change-password",
             Some(request),
             true,
         )
@@ -144,12 +139,12 @@ impl ApiGatewayRestClient {
         &self,
         request: CreateApiKeyRequest,
     ) -> Result<CreateApiKeyResponse> {
-        self.request(reqwest::Method::POST, "create_api_key", Some(request), true)
+        self.request(reqwest::Method::POST, "api-keys", Some(request), true)
             .await
     }
 
-    pub async fn get_api_keys(&self, request: GetApiKeysRequest) -> Result<GetApiKeysResponse> {
-        self.request(reqwest::Method::POST, "get_api_keys", Some(request), true)
+    pub async fn get_api_keys(&self) -> Result<GetApiKeysResponse> {
+        self.request::<(), GetApiKeysResponse>(reqwest::Method::GET, "api-keys", None, true)
             .await
     }
 
@@ -157,7 +152,7 @@ impl ApiGatewayRestClient {
         &self,
         request: RevokeApiKeyRequest,
     ) -> Result<RevokeApiKeyResponse> {
-        self.request(reqwest::Method::POST, "revoke_api_key", Some(request), true)
+        self.request(reqwest::Method::DELETE, "api-keys", Some(request), true)
             .await
     }
 
@@ -167,34 +162,35 @@ impl ApiGatewayRestClient {
     }
 
     pub async fn setup_2fa(&self) -> Result<Setup2faResponse> {
-        self.request::<(), Setup2faResponse>(reqwest::Method::POST, "setup_2fa", None, true)
+        self.request::<(), Setup2faResponse>(reqwest::Method::POST, "mfa/setup", None, true)
             .await
     }
 
     pub async fn confirm_2fa(&self, request: Confirm2faRequest) -> Result<Confirm2faResponse> {
-        self.request(reqwest::Method::POST, "confirm_2fa", Some(request), true)
+        self.request(reqwest::Method::POST, "mfa/confirm", Some(request), true)
             .await
     }
 
     pub async fn disable_2fa(&self) -> Result<Disable2faResponse> {
-        self.request::<(), Disable2faResponse>(reqwest::Method::POST, "disable_2fa", None, true)
+        self.request::<(), Disable2faResponse>(reqwest::Method::POST, "mfa/disable", None, true)
             .await
     }
 
     // Admin endpoints
+    // TODO: move to sdk-internal?
 
     pub async fn create_user(&self, request: CreateUserRequest) -> Result<CreateUserResponse> {
-        self.request(reqwest::Method::POST, "create_user", Some(request), true)
+        self.request(reqwest::Method::POST, "admin/users", Some(request), true)
             .await
     }
 
     pub async fn get_users(&self) -> Result<GetUsersResponse> {
-        self.request::<(), GetUsersResponse>(reqwest::Method::GET, "users", None, true)
+        self.request::<(), GetUsersResponse>(reqwest::Method::GET, "admin/users", None, true)
             .await
     }
 
     pub async fn get_user(&self, username: &str) -> Result<GetUserResponse> {
-        let path = format!("users/{}", username);
+        let path = format!("admin/user?username={}", username);
         self.request::<(), GetUserResponse>(reqwest::Method::GET, &path, None, true)
             .await
     }
@@ -205,7 +201,7 @@ impl ApiGatewayRestClient {
     ) -> Result<RevokeUserTokenResponse> {
         self.request(
             reqwest::Method::POST,
-            "revoke_user_token",
+            "admin/revoke-token",
             Some(request),
             true,
         )
@@ -213,16 +209,17 @@ impl ApiGatewayRestClient {
     }
 
     pub async fn decode_token(&self, request: DecodeTokenRequest) -> Result<DecodeTokenResponse> {
-        self.request(reqwest::Method::POST, "decode_token", Some(request), true)
-            .await
+        self.request(
+            reqwest::Method::POST,
+            "admin/decode-token",
+            Some(request),
+            true,
+        )
+        .await
     }
 
-    pub async fn update_user_status(
-        &self,
-        username: &str,
-        request: UpdateUserStatusRequest,
-    ) -> Result<GetUserResponse> {
-        let path = format!("users/{}/status", username);
+    pub async fn update_user_status(&self, request: UpdateUserRequest) -> Result<GetUserResponse> {
+        let path = format!("admin/user/status");
         self.request(reqwest::Method::PUT, &path, Some(request), true)
             .await
     }
@@ -230,7 +227,7 @@ impl ApiGatewayRestClient {
     pub async fn get_user_risk_profiles(&self) -> Result<GetUserRiskProfilesResponse> {
         self.request::<(), GetUserRiskProfilesResponse>(
             reqwest::Method::GET,
-            "user_risk_profiles",
+            "admin/risk-profiles",
             None,
             true,
         )
@@ -241,7 +238,7 @@ impl ApiGatewayRestClient {
         &self,
         username: &str,
     ) -> Result<GetUserRiskProfileResponse> {
-        let path = format!("user_risk_profiles/{}", username);
+        let path = format!("admin/risk-profile?username={}", username);
         self.request::<(), GetUserRiskProfileResponse>(reqwest::Method::GET, &path, None, true)
             .await
     }
@@ -285,7 +282,7 @@ impl ApiGatewayRestClient {
     ) -> Result<GetBalancesResponse> {
         self.request(
             reqwest::Method::POST,
-            "sandbox/withdrawal",
+            "sandbox/withdraw",
             Some(request),
             true,
         )
