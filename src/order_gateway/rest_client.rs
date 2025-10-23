@@ -108,6 +108,7 @@ impl OrderGatewayRestClient {
             .request(reqwest::Method::GET, "open_orders", Some(payload), true)
             .await?;
         let orders = res
+            .orders
             .into_iter()
             .map(|o| o.try_into())
             .collect::<Result<Vec<Order>>>()?;

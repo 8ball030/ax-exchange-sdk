@@ -110,6 +110,24 @@ pub enum Side {
     Sell,
 }
 
+impl Side {
+    pub fn as_char(&self) -> &'static str {
+        match self {
+            Self::Buy => "B",
+            Self::Sell => "S",
+        }
+    }
+
+    pub fn from_char<'a>(s: &'a str) -> Result<Self> {
+        let t = match s {
+            "B" => Self::Buy,
+            "S" => Self::Sell,
+            other => bail!("unknown side: {other}"),
+        };
+        Ok(t)
+    }
+}
+
 #[derive(
     Debug,
     Clone,
@@ -242,7 +260,7 @@ impl OrderState {
         }
     }
 
-    pub fn from_char(s: &'static str) -> Result<Self> {
+    pub fn from_char<'a>(s: &'a str) -> Result<Self> {
         let t = match s {
             "P" => Self::Pending,
             "A" => Self::Accepted,

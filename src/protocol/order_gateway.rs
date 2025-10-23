@@ -1,8 +1,5 @@
 use crate::{
-    protocol::{
-        common::{DateRangeParams, PaginationParams},
-        ws::{self, Timestamp},
-    },
+    protocol::ws::{self, Timestamp},
     types::{Order, OrderState, Side},
 };
 use anyhow::{anyhow, Result};
@@ -164,7 +161,12 @@ pub struct CancelOrderResponse {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
 pub struct GetOpenOrdersRequest {}
 
-pub type GetOpenOrdersResponse = Vec<OrderDetails>;
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct GetOpenOrdersResponse {
+    pub orders: Vec<OrderDetails>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -438,16 +440,20 @@ pub struct FillDetails {
 
 /// Order history query filters
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OrderHistoryFilters {
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
+pub struct GetOrdersRequest {
     pub symbol: Option<String>,
-    pub side: Option<Side>,
-    pub order_state: Option<OrderState>,
-    pub status: Option<String>,
-    pub order_type: Option<String>,
     pub start_time: Option<DateTime<Utc>>,
     pub end_time: Option<DateTime<Utc>>,
     pub limit: Option<u32>,
     pub offset: Option<u32>,
-    pub pagination: Option<PaginationParams>,
-    pub date_range: Option<DateRangeParams>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct GetOrdersResponse {
+    pub orders: Vec<OrderDetails>,
+    pub total_count: u64,
+    pub limit: u32,
+    pub offset: u32,
 }
