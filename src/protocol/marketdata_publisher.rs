@@ -15,6 +15,8 @@ pub enum MarketdataEvent {
     L2BookUpdate(L2BookUpdate),
     #[serde(rename = "3")]
     L3BookUpdate(L3BookUpdate),
+    #[serde(rename = "t")]
+    Trade(Trade),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -94,4 +96,18 @@ pub struct L3BookLevel {
     pub quantity: i32,
     #[serde(rename = "o")]
     pub order_quantities: Vec<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Trade {
+    #[serde(rename = "p")]
+    pub price: Decimal,
+    #[serde(rename = "q")]
+    pub quantity: i32,
+    #[serde(rename = "s")]
+    pub symbol: String,
+    #[serde(rename = "d")]
+    pub taker_side: crate::types::trading::Side,
+    #[serde(flatten)]
+    pub timestamp: Timestamp,
 }

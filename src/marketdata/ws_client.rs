@@ -141,6 +141,9 @@ impl MarketdataWsClient {
                 let orderbook: Orderbook = u.into();
                 self.orderbooks.insert(u.symbol.clone(), orderbook);
             }
+            MarketdataEvent::Trade(_t) => {
+                // TODO
+            }
         }
         Ok(())
     }
