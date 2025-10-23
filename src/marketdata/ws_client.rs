@@ -5,7 +5,11 @@ use log::{debug, error, info, trace};
 use serde_json::json;
 use std::{collections::HashMap, sync::Arc};
 use tokio::net::TcpStream;
-use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
+use tokio_tungstenite::{
+    connect_async,
+    tungstenite::{client::IntoClientRequest, Message},
+    MaybeTlsStream, WebSocketStream,
+};
 use url::Url;
 
 pub type SendCallback = Box<dyn Fn(&str) + Send + Sync>;
@@ -31,19 +35,14 @@ impl MarketdataWsClient {
         res.map_err(|_| anyhow!("invalid url scheme"))?;
         let md_url = ws_base_url.join("md/ws")?.to_string();
 
+        let mut request = md_url.clone().into_client_request()?;
+        request
+            .headers_mut()
+            .insert("Authorization", token.as_ref().parse()?);
+
         // connect to market data publisher
         info!("connecting to {md_url}");
-        let (mut ws, _) = connect_async(md_url).await?;
-
-        // send login request
-        let req = json!({
-            "request_id": 1,
-            "type": "login",
-            "token": token.as_ref().to_string(),
-        });
-        let payload = serde_json::to_string(&req)?;
-        info!("sending login request: {payload}");
-        ws.send(Message::Text(payload.into())).await?;
+        let (ws, _) = connect_async(request).await?;
 
         Ok(Self {
             ws,
