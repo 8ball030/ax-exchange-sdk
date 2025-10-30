@@ -87,7 +87,7 @@ pub struct Ticker {
     pub total_volume: i32,
     /// Open interest in contracts
     #[serde(rename = "oi")]
-    pub open_interest: i32,
+    pub open_interest: u32,
     /// Instrument state
     #[serde(rename = "i")]
     #[serde(default)]
