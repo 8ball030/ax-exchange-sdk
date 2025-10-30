@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 #[derive(derive_more::Deref, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct Request<T> {
-    #[serde(rename = "rid")]
+    #[serde(rename = "rid", alias = "request_id")]
     pub request_id: i32,
     #[serde(flatten)]
     #[deref]
