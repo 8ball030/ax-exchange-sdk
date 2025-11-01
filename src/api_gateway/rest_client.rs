@@ -47,7 +47,7 @@ impl ApiGatewayRestClient {
     }
 
     /// Helper method to make HTTP requests with optional authentication
-    async fn request<T: Serialize, R: DeserializeOwned>(
+    pub async fn request<T: Serialize, R: DeserializeOwned>(
         &self,
         method: reqwest::Method,
         path: &str,
