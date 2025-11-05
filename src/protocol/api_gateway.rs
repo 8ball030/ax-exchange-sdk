@@ -302,6 +302,30 @@ pub struct GetTransactionsResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct FundingTransaction {
+    pub user_id: Uuid,
+    pub currency: String,
+    pub timestamp: DateTime<Utc>,
+    pub transaction_type: String,
+    pub amount: Decimal,
+    pub event_id: String,
+    pub sequence_number: i32,
+    pub reference_id: Option<String>,
+    pub symbol: String,
+    pub funding_rate: Decimal,
+    pub funding_amount: Decimal,
+    pub benchmark_price: Decimal,
+    pub settlement_price: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct GetFundingTransactionsResponse {
+    pub funding_transactions: Vec<FundingTransaction>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct Setup2faResponse {
     pub validate_token: String,
     /// The `uri` field contains a provisioning URI following the
