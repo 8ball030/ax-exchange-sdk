@@ -1,6 +1,6 @@
 [package]
 edition = "2021"
-name = "adx-sdk"
+name = "ax-sdk"
 version = "0.1.1"
 
 [features]
