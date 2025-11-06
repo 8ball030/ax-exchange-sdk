@@ -5,8 +5,6 @@
 pub mod auth;
 pub mod order_id;
 pub mod orderbook;
-pub mod risk;
-pub mod settlement;
 pub mod symbol;
 pub mod tag;
 pub mod trading;
@@ -15,10 +13,6 @@ pub mod trading;
 pub use auth::{ApiKey, Password, Token, Username};
 pub use order_id::OrderId;
 pub use orderbook::{Orderbook, OrderbookLevel};
-pub use risk::{
-    PythonRiskPosition, PythonRiskSnapshot, RiskMetrics, RiskPosition, RiskSnapshot, UserStatus,
-};
-pub use settlement::SettlementConfig;
 pub use symbol::Symbol;
 pub use tag::Tag;
 pub use trading::{

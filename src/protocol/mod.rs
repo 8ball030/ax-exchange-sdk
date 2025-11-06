@@ -6,7 +6,6 @@ pub mod candle_server;
 pub mod common;
 pub mod marketdata_publisher;
 pub mod order_gateway;
-pub mod risk_manager;
 pub mod settlement_engine;
 pub mod ws;
 
