@@ -424,7 +424,7 @@ pub struct Balance {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct SymbolRiskSnapshot {
-    pub open_quantity: Decimal,
+    pub open_quantity: i64,
     pub open_notional: Decimal,
     pub average_price: Option<Decimal>,
     pub initial_margin_required_position: Decimal,
