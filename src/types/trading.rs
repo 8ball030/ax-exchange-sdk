@@ -100,6 +100,10 @@ pub struct Order {
     pub remaining_quantity: i32,
     /// Timestamp when the order state became terminal
     pub completion_time: Option<DateTime<Utc>>,
+    /// Reason for rejection if order_state is Rejected
+    pub reject_reason: Option<OrderRejectReason>,
+    /// Additional message for rejection if order_state is Rejected
+    pub reject_message: Option<String>,
 }
 
 #[derive(Debug, derive_more::Display, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -300,6 +304,7 @@ impl OrderState {
     strum::IntoStaticStr,
 )]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum OrderRejectReason {

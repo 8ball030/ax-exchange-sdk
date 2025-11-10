@@ -111,6 +111,8 @@ impl PlaceOrderRequest {
             filled_quantity: 0,
             remaining_quantity: self.quantity,
             completion_time: None,
+            reject_reason: None,
+            reject_message: None,
         }
     }
 }
@@ -370,6 +372,10 @@ pub struct OrderDetails {
     pub time_in_force: String,
     #[serde(rename = "tag", skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
+    #[serde(rename = "r", skip_serializing_if = "Option::is_none")]
+    pub reject_reason: Option<OrderRejectReason>,
+    #[serde(rename = "txt", skip_serializing_if = "Option::is_none")]
+    pub reject_message: Option<String>,
     #[serde(flatten)]
     pub timestamp: Timestamp,
 }
@@ -395,6 +401,8 @@ impl TryFrom<OrderDetails> for crate::types::Order {
                 .as_datetime()
                 .ok_or_else(|| anyhow!("invalid timestamp"))?,
             completion_time: None,
+            reject_reason: value.reject_reason,
+            reject_message: value.reject_message,
         })
     }
 }
@@ -413,6 +421,8 @@ impl From<crate::types::Order> for OrderDetails {
             side: value.side,
             time_in_force: value.time_in_force,
             tag: value.tag,
+            reject_reason: value.reject_reason,
+            reject_message: value.reject_message,
             timestamp: Timestamp {
                 ts: value.timestamp.timestamp() as i32,
                 tn: value.timestamp.timestamp_subsec_nanos() as u32,
