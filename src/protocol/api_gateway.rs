@@ -279,7 +279,7 @@ pub struct GetTickersResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
 pub struct GetTransactionsRequest {
-    pub transaction_types: Vec<String>,
+    pub transaction_types: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
