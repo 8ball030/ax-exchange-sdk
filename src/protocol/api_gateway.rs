@@ -5,6 +5,7 @@ use crate::{
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use serde_with::{formats::CommaSeparator, serde_as, StringWithSeparator};
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -276,10 +277,12 @@ pub struct GetTickersResponse {
     pub tickers: Vec<Ticker>,
 }
 
+#[serde_as]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
 pub struct GetTransactionsRequest {
-    pub transaction_types: String,
+    #[serde_as(as = "StringWithSeparator::<CommaSeparator, String>")]
+    pub transaction_types: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
