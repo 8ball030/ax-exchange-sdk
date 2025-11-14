@@ -92,6 +92,12 @@ pub struct Ticker {
     #[serde(rename = "i")]
     #[serde(default)]
     pub instrument_state: InstrumentState,
+    /// Price band lower limit in USD (absolute bound calculated from settlement price and lower deviation percentage)
+    #[serde(rename = "pl")]
+    pub price_band_lower_limit: Option<Decimal>,
+    /// Price band upper limit in USD (absolute bound calculated from settlement price and upper deviation percentage)
+    #[serde(rename = "pu")]
+    pub price_band_upper_limit: Option<Decimal>,
 }
 
 pub type L1BookUpdate = L2BookUpdate;
