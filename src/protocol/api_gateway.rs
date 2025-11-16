@@ -1,6 +1,7 @@
 use crate::{
     protocol::marketdata_publisher::Ticker,
     types::{Candle, Instrument, Token},
+    Side,
 };
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
@@ -491,4 +492,21 @@ pub struct BookLevel {
     pub total_quantity: i64,
     #[serde(rename = "o")]
     pub orders: Option<Vec<i64>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct AggessiveLimitOrderPreviewRequest {
+    pub symbol: String,
+    pub quantity: i64,
+    pub side: Side,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct AggessiveLimitOrderPreviewResponse {
+    pub limit_price: Option<Decimal>,
+    pub vwap: Option<Decimal>,
+    pub filled_quantity: i64,
+    pub remaining_quantity: i64,
 }
