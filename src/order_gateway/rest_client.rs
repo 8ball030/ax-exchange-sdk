@@ -1,5 +1,6 @@
 use crate::protocol::{order_gateway::*, ErrorResponse, HealthResponse};
 use crate::types::trading::{Order, PlaceOrder};
+use crate::OrderId;
 use anyhow::{anyhow, bail, Result};
 use chrono::{DateTime, Utc};
 use log::{debug, trace};
@@ -125,9 +126,9 @@ impl OrderGatewayRestClient {
     }
 
     /// Cancel an existing order
-    pub async fn cancel_order(&self, order_id: impl AsRef<str>) -> Result<bool> {
+    pub async fn cancel_order(&self, order_id: &OrderId) -> Result<bool> {
         let payload = CancelOrderRequest {
-            order_id: order_id.as_ref().to_string(),
+            order_id: order_id.clone(),
         };
         let res: CancelOrderResponse = self
             .request(reqwest::Method::POST, "cancel_order", Some(payload), true)

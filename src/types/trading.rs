@@ -2,6 +2,7 @@
 //!
 //! This module contains core business types for trading operations.
 
+use crate::OrderId;
 use anyhow::{bail, Result};
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
@@ -85,7 +86,7 @@ pub struct PlaceOrder {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Order {
-    pub order_id: String,
+    pub order_id: OrderId,
     pub user_id: Uuid,
     pub symbol: String,
     pub side: Side,
@@ -104,6 +105,13 @@ pub struct Order {
     pub reject_reason: Option<OrderRejectReason>,
     /// Additional message for rejection if order_state is Rejected
     pub reject_message: Option<String>,
+}
+
+impl Order {
+    /// Check if this is a liquidation order
+    pub fn is_liquidation(&self) -> bool {
+        self.order_id.is_liquidation()
+    }
 }
 
 #[derive(Debug, derive_more::Display, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

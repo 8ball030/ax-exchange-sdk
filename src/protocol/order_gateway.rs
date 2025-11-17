@@ -1,6 +1,6 @@
 use crate::{
     protocol::{common::Timestamp, ws},
-    types::{Order, OrderRejectReason, OrderState, Side},
+    types::{Order, OrderId, OrderRejectReason, OrderState, Side},
 };
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
@@ -96,7 +96,7 @@ pub struct PlaceOrderRequest {
 
 impl PlaceOrderRequest {
     /// Convert this place order request into a pending order
-    pub fn into_pending_order(self, order_id: String, user_id: Uuid) -> crate::types::Order {
+    pub fn into_pending_order(self, order_id: OrderId, user_id: Uuid) -> crate::types::Order {
         crate::types::Order {
             order_id,
             user_id,
@@ -146,7 +146,7 @@ pub struct PlaceOrderResponse {
 pub struct CancelOrderRequest {
     /// Order ID to cancel; e.g. "ORD-1234567890"
     #[serde(rename = "oid")]
-    pub order_id: String,
+    pub order_id: OrderId,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -199,7 +199,7 @@ pub enum OrderGatewayEvent {
 
 impl OrderGatewayEvent {
     /// Order ID that the event pertains to, if applicable and singular.
-    pub fn order_id(&self) -> Option<&str> {
+    pub fn order_id(&self) -> Option<&OrderId> {
         match self {
             OrderGatewayEvent::Heartbeat(..) => None,
             OrderGatewayEvent::CancelRejected(rej) => Some(&rej.order_id),
@@ -237,7 +237,7 @@ pub struct CancelRejected {
     #[serde(flatten)]
     pub timestamp: Timestamp,
     #[serde(rename = "oid")]
-    pub order_id: String,
+    pub order_id: OrderId,
     #[serde(rename = "r")]
     pub reject_reason: String,
     #[serde(rename = "txt")]
@@ -351,7 +351,7 @@ pub struct OrderFilled {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct OrderDetails {
     #[serde(rename = "oid")]
-    pub order_id: String,
+    pub order_id: OrderId,
     #[serde(rename = "u")]
     pub user_id: Uuid,
     #[serde(rename = "s")]

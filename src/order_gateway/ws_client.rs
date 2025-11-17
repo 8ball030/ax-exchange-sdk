@@ -1,5 +1,6 @@
 use crate::protocol::{self, order_gateway::*};
 use crate::types::PlaceOrder;
+use crate::OrderId;
 use anyhow::{anyhow, bail, Result};
 use futures::{SinkExt, StreamExt};
 use log::{debug, error, info, trace, warn};
@@ -238,12 +239,12 @@ impl OrderGatewayWsClient {
         Ok(request_id)
     }
 
-    pub async fn cancel_order(&mut self, order_id: impl AsRef<str>) -> Result<i32> {
+    pub async fn cancel_order(&mut self, order_id: &OrderId) -> Result<i32> {
         let request_id = self.next_request_id;
         self.next_request_id += 1;
         let req = protocol::order_gateway::OrderGatewayRequest::CancelOrder(
             protocol::order_gateway::CancelOrderRequest {
-                order_id: order_id.as_ref().to_string(),
+                order_id: order_id.clone(),
             },
         );
         let wrapped_req = protocol::ws::Request {

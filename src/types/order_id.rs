@@ -4,6 +4,7 @@
 
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
+use std::borrow::Borrow;
 
 const REGULAR_PREFIX: &str = "O-";
 const LIQUIDATION_PREFIX: &str = "L-";
@@ -26,6 +27,8 @@ const LIQUIDATION_PREFIX: &str = "L-";
     Serialize,
     Deserialize,
 )]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct OrderId(String);
 
 impl OrderId {
@@ -99,9 +102,15 @@ impl OrderId {
     }
 }
 
-impl<T: AsRef<str>> PartialEq<T> for OrderId {
-    fn eq(&self, other: &T) -> bool {
-        self.0 == other.as_ref()
+impl AsRef<str> for OrderId {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Borrow<str> for OrderId {
+    fn borrow(&self) -> &str {
+        &self.0
     }
 }
 
@@ -159,5 +168,14 @@ mod tests {
 
         // Missing prefix
         assert!(OrderId::new("01234567890123456789012345").is_err());
+    }
+
+    #[test]
+    fn test_serde() {
+        let order_id = OrderId::new("O-01KA7S36VM6HBEEAE3EN9ZRHEA").unwrap();
+        let json = serde_json::to_string(&order_id).unwrap();
+        assert_eq!(json, r#""O-01KA7S36VM6HBEEAE3EN9ZRHEA""#);
+        let order_id2: OrderId = serde_json::from_str(&json).unwrap();
+        assert_eq!(order_id, order_id2);
     }
 }
