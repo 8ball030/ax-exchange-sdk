@@ -1,5 +1,5 @@
 use crate::{
-    protocol::marketdata_publisher::Ticker,
+    protocol::{common::Timestamp, marketdata_publisher::Ticker},
     types::{Candle, Instrument, Token},
     Side,
 };
@@ -465,27 +465,25 @@ pub struct GetBookRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct GetBookResponse {
-    pub book: Book,
+    pub book: GetBookResponseBook,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
-pub struct Book {
+pub struct GetBookResponseBook {
     #[serde(rename = "s")]
     pub symbol: String,
     #[serde(rename = "b")]
-    pub bids: Vec<BookLevel>,
+    pub bids: Vec<GetBookResponseBookLevel>,
     #[serde(rename = "a")]
-    pub offers: Vec<BookLevel>,
-    #[serde(rename = "ts")]
-    pub timestamp_seconds: i64,
-    #[serde(rename = "tn")]
-    pub timestamp_nanos: i32,
+    pub offers: Vec<GetBookResponseBookLevel>,
+    #[serde(flatten)]
+    pub timestamp: Timestamp,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
-pub struct BookLevel {
+pub struct GetBookResponseBookLevel {
     #[serde(rename = "p")]
     pub price: Decimal,
     #[serde(rename = "q")]
@@ -496,7 +494,7 @@ pub struct BookLevel {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
-pub struct AggessiveLimitOrderPreviewRequest {
+pub struct PreviewAggressiveLimitOrderRequest {
     pub symbol: String,
     pub quantity: i64,
     pub side: Side,
@@ -504,7 +502,7 @@ pub struct AggessiveLimitOrderPreviewRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
-pub struct AggessiveLimitOrderPreviewResponse {
+pub struct PreviewAggressiveLimitOrderResponse {
     pub limit_price: Option<Decimal>,
     pub vwap: Option<Decimal>,
     pub filled_quantity: i64,

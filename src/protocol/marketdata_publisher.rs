@@ -1,5 +1,5 @@
 use crate::{
-    protocol::ws::Timestamp,
+    protocol::common::Timestamp,
     types::trading::{Candle, CandleWidth},
     InstrumentState,
 };

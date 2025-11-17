@@ -6,6 +6,34 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct Timestamp {
+    pub ts: i32,
+    pub tn: u32,
+}
+
+impl Timestamp {
+    pub fn now() -> Self {
+        let now = Utc::now();
+        now.into()
+    }
+
+    pub fn as_datetime(&self) -> Option<DateTime<Utc>> {
+        DateTime::from_timestamp(self.ts as i64, self.tn)
+    }
+}
+
+impl From<DateTime<Utc>> for Timestamp {
+    fn from(value: DateTime<Utc>) -> Self {
+        Self {
+            ts: value.timestamp() as i32,
+            tn: value.timestamp_subsec_nanos() as u32,
+        }
+    }
+}
+
 /// Pagination parameters for API requests
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PaginationParams {

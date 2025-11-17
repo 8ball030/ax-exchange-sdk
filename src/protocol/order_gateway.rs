@@ -1,5 +1,5 @@
 use crate::{
-    protocol::ws::{self, Timestamp},
+    protocol::{common::Timestamp, ws},
     types::{Order, OrderRejectReason, OrderState, Side},
 };
 use anyhow::{anyhow, Result};
