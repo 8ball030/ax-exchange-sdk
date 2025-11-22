@@ -31,6 +31,7 @@ pub struct Instrument {
     pub state: InstrumentState,
     // Programmatic specification fields
     pub multiplier: Decimal,
+    pub price_scale: i64,
     pub minimum_order_size: Decimal,
     pub tick_size: Decimal,
     pub quote_currency: String,
