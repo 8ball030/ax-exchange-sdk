@@ -28,7 +28,6 @@ pub struct InstrumentV0 {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct Instrument {
     pub symbol: String,
-    pub state: InstrumentState,
     // Programmatic specification fields
     pub multiplier: Decimal,
     pub price_scale: i64,
@@ -92,18 +91,31 @@ pub struct TimeOfDay {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum InstrumentState {
+    /// The instrument is closed. No trading can occur
+    Closed,
+
     /// The instrument is available to place orders and modify them
     /// before the opening, but no matching will occur until the open.
     ///
     /// At the open, crossing orders will be matched via Dutch auction.
     PreOpen,
+
     /// The instrument is open and is available for full trading.
     Open,
+
     /// The instrument has temporarily suspended trading. In this state,
     /// no orders can be placed or modified, but they can be cancelled.
     Suspended,
+
     /// The instrument has been delisted.  This state is terminal.
     Delisted,
+
+    /// The instrument has halted trading. This state is similar to the suspended state in that no orders can be placed or modified, but orders cannot be cancelled unlike the suspended state which allows cancellation.
+    Halted,
+
+    /// The instrument is available to place orders and modify them just as in pre open, but no matching will occur until this state has been exited.
+    MatchAndCloseAuction,
+
     /// The instrument status is unknown.
     #[default]
     Unknown,
@@ -883,12 +895,16 @@ mod tests {
     fn test_instrument_state_serialization() {
         // Test that InstrumentState serializes to expected string values
         assert_eq!(
-            serde_json::to_string(&InstrumentState::Open).unwrap(),
-            r#""OPEN""#
+            serde_json::to_string(&InstrumentState::Closed).unwrap(),
+            r#""CLOSED""#
         );
         assert_eq!(
             serde_json::to_string(&InstrumentState::PreOpen).unwrap(),
             r#""PRE_OPEN""#
+        );
+        assert_eq!(
+            serde_json::to_string(&InstrumentState::Open).unwrap(),
+            r#""OPEN""#
         );
         assert_eq!(
             serde_json::to_string(&InstrumentState::Suspended).unwrap(),
@@ -908,7 +924,6 @@ mod tests {
     fn test_instrument_with_trading_schedule_serialization() {
         let instrument = Instrument {
             symbol: "TEST-PERP".to_string(),
-            state: InstrumentState::Open,
             multiplier: rust_decimal::Decimal::ONE,
             price_scale: 10000,
             minimum_order_size: rust_decimal::Decimal::ONE,
