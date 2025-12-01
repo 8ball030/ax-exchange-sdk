@@ -143,6 +143,15 @@ pub struct PlaceOrderResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct InitialMarginRequirementResponse {
+    /// Initial margin requirement for the order; e.g. "1000.00"
+    #[serde(rename = "im")]
+    pub initial_margin_requirement: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct CancelOrderRequest {
     /// Order ID to cancel; e.g. "ORD-1234567890"
     #[serde(rename = "oid")]
