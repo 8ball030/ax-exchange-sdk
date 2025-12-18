@@ -14,24 +14,23 @@ pub struct ArchitectX {
     base_url: Url,
     api_gateway_base_url: Url,
     order_gateway_base_url: Url,
-    username: Option<String>,
-    password: Option<String>,
+    api_key: Option<String>,
+    api_secret: Option<String>,
     user_token: Arc<ArcSwapOption<(ArcStr, DateTime<Utc>)>>,
 }
 
 impl ArchitectX {
-    // CR alee: deprecate username/password arguments
     pub fn new(
         base_url: Url,
-        username: Option<impl AsRef<str>>,
-        password: Option<impl AsRef<str>>,
+        api_key: Option<impl AsRef<str>>,
+        api_secret: Option<impl AsRef<str>>,
     ) -> Result<Self> {
         Ok(Self {
             base_url: base_url.clone(),
             api_gateway_base_url: base_url.join("api/")?,
             order_gateway_base_url: base_url.join("orders/")?,
-            username: username.map(|u| u.as_ref().to_string()),
-            password: password.map(|p| p.as_ref().to_string()),
+            api_key: api_key.map(|k| k.as_ref().to_string()),
+            api_secret: api_secret.map(|s| s.as_ref().to_string()),
             user_token: Arc::new(ArcSwapOption::const_empty()),
         })
     }
@@ -44,11 +43,35 @@ impl ArchitectX {
         self.order_gateway_base_url = base_url;
     }
 
-    /// Login with username and password.  If the account has 2FA enabled,
-    /// you will also need to provide a TOTP code.
+    /// Authenticate with api key and secret.
     ///
-    /// This method currently exchanges the username and password for a
+    /// This method currently exchanges the api key and secret for a
     /// user token directly.
+    pub async fn authenticate(
+        &self,
+        api_key: impl Into<String>,
+        api_secret: impl Into<String>,
+    ) -> Result<ArcStr> {
+        use crate::protocol::api_gateway::{AuthenticateRequest, AuthenticationMethod};
+        let auth = AuthenticationMethod::ApiKeySecret {
+            api_key: api_key.into(),
+            api_secret: api_secret.into(),
+        };
+        let client = ApiGatewayRestClient::new(self.api_gateway_base_url.clone())?;
+        let res = client
+            .authenticate(AuthenticateRequest {
+                auth,
+                expiration_seconds: 3600,
+                totp: None,
+            })
+            .await?;
+        let token: ArcStr = res.token.expose_secret().to_string().into();
+        let expires = Utc::now() + chrono::Duration::seconds(3300);
+        self.user_token
+            .store(Some(Arc::new((token.clone(), expires))));
+        Ok(token)
+    }
+
     pub async fn login(
         &self,
         username: impl AsRef<str>,
@@ -56,13 +79,14 @@ impl ArchitectX {
         totp: Option<impl AsRef<str>>,
     ) -> Result<ArcStr> {
         use crate::protocol::api_gateway::{AuthenticateRequest, AuthenticationMethod};
+        let auth = AuthenticationMethod::UsernamePassword {
+            username: username.as_ref().to_string(),
+            password: password.as_ref().to_string(),
+        };
         let client = ApiGatewayRestClient::new(self.api_gateway_base_url.clone())?;
         let res = client
             .authenticate(AuthenticateRequest {
-                auth: AuthenticationMethod::UsernamePassword {
-                    username: username.as_ref().to_string(),
-                    password: password.as_ref().to_string(),
-                },
+                auth,
                 expiration_seconds: 3600,
                 totp: totp.map(|t| t.as_ref().to_string()),
             })
@@ -83,15 +107,16 @@ impl ArchitectX {
                 return Ok(token.clone());
             }
         }
-        let username = self
-            .username
+
+        let api_key = self
+            .api_key
             .as_ref()
-            .ok_or_else(|| anyhow!("no username provided"))?;
-        let password = self
-            .password
+            .ok_or_else(|| anyhow!("no api_key provided"))?;
+        let api_secret = self
+            .api_secret
             .as_ref()
-            .ok_or_else(|| anyhow!("no password provided"))?;
-        self.login(username, password, None::<&str>).await
+            .ok_or_else(|| anyhow!("no secret provided"))?;
+        self.authenticate(api_key, api_secret).await
     }
 
     pub fn api_gateway(&self) -> Result<ApiGatewayRestClient> {

@@ -53,7 +53,7 @@ pub struct CreateApiKeyRequest {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct CreateApiKeyResponse {
     pub api_key: String,
-    pub secret: String,
+    pub api_secret: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -95,7 +95,7 @@ pub struct AuthenticateRequest {
 #[serde(untagged)]
 pub enum AuthenticationMethod {
     UsernamePassword { username: String, password: String },
-    ApiKeySecret { api_key: String, secret: String },
+    ApiKeySecret { api_key: String, api_secret: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -385,7 +385,7 @@ mod tests {
         let json = r#"
         {
             "api_key": "testapikey",
-            "secret": "testsecret",
+            "api_secret": "testsecret",
             "expiration_seconds": 3600
         }
         "#;
@@ -395,7 +395,7 @@ mod tests {
             AuthenticateRequest {
                 auth: AuthenticationMethod::ApiKeySecret {
                     api_key: "testapikey".to_string(),
-                    secret: "testsecret".to_string()
+                    api_secret: "testsecret".to_string()
                 },
                 expiration_seconds: 3600,
                 totp: None

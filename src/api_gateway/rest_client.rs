@@ -87,6 +87,7 @@ impl ApiGatewayRestClient {
         if res_status.is_success() {
             Ok(serde_json::from_str(&res_text)?)
         } else {
+            log::error!("error: {} {} returned {}", method, url, res_status);
             match serde_json::from_str::<ErrorResponse>(&res_text) {
                 Ok(error_response) => Err(anyhow!(error_response.error)),
                 Err(e) => Err(anyhow!("while parsing error response: {e:?}")),
