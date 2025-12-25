@@ -2,6 +2,8 @@
 //!
 //! This module contains types used for API protocol communication (over-the-wire).
 
+pub const DEFAULT_PAGINATION_LIMIT: u32 = 100;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
