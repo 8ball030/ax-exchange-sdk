@@ -6,7 +6,6 @@ use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -97,7 +96,7 @@ pub struct PlaceOrderRequest {
 
 impl PlaceOrderRequest {
     /// Convert this place order request into a pending order
-    pub fn into_pending_order(self, order_id: OrderId, user_id: Uuid) -> crate::types::Order {
+    pub fn into_pending_order(self, order_id: OrderId, user_id: String) -> crate::types::Order {
         crate::types::Order {
             order_id,
             user_id,
@@ -363,7 +362,7 @@ pub struct OrderDetails {
     #[serde(rename = "oid")]
     pub order_id: OrderId,
     #[serde(rename = "u")]
-    pub user_id: Uuid,
+    pub user_id: String,
     #[serde(rename = "s")]
     pub symbol: String,
     #[serde(rename = "p")]

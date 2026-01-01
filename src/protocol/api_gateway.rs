@@ -11,7 +11,6 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_with::{formats::CommaSeparator, serde_as, StringWithSeparator};
 use std::collections::HashMap;
-use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
@@ -119,7 +118,7 @@ pub struct LoginRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct WhoAmIResponse {
-    pub id: Uuid,
+    pub id: String,
     pub username: String,
     pub created_at: DateTime<Utc>,
     pub enabled_2fa: bool,
@@ -183,7 +182,7 @@ pub struct GetTransactionsRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct Transaction {
-    pub user_id: Uuid,
+    pub user_id: String,
     pub event_id: String,
     pub symbol: String,
     pub timestamp: DateTime<Utc>,
@@ -201,7 +200,7 @@ pub struct GetTransactionsResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct FundingTransaction {
-    pub user_id: Uuid,
+    pub user_id: String,
     pub currency: String,
     pub timestamp: DateTime<Utc>,
     pub transaction_type: String,
@@ -279,7 +278,7 @@ pub struct GetPositionsResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct Position {
-    pub user_id: Uuid,
+    pub user_id: String,
     pub symbol: String,
     pub open_quantity: i64,
     pub open_notional: Decimal,
@@ -297,7 +296,7 @@ pub struct GetFillsResponse {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct Fill {
     pub trade_id: String,
-    pub user_id: Uuid,
+    pub user_id: String,
     pub timestamp: DateTime<Utc>,
     pub symbol: String,
     pub price: Decimal,
@@ -336,7 +335,7 @@ pub struct SymbolRiskSnapshot {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct UserRiskSnapshot {
-    pub user_id: Uuid,
+    pub user_id: String,
     pub timestamp_ns: DateTime<Utc>,
     pub per_symbol: HashMap<String, SymbolRiskSnapshot>,
     pub initial_margin_required_for_positions: Decimal,
@@ -482,7 +481,7 @@ pub struct SignupRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct SignupResponse {
-    pub user_id: Uuid,
+    pub user_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

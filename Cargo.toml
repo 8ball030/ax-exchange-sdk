@@ -36,4 +36,3 @@ tokio-tungstenite = { workspace = true }
 ulid = { workspace = true }
 url = { workspace = true }
 utoipa = { workspace = true, optional = true }
-uuid = { workspace = true }
