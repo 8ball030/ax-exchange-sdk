@@ -291,6 +291,6 @@ mod tests {
         // Test invalid cases
         assert!(Username::new("").is_err());
         assert!(Username::new("user space").is_err());
-        assert!(Username::new(&"a".repeat(51)).is_err());
+        assert!(Username::new("a".repeat(51)).is_err());
     }
 }
