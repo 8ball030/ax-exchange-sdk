@@ -12,8 +12,8 @@ pub struct OrderbookLevel {
     pub order_quantities: Option<Vec<i32>>, // for LEVEL_3
 }
 
-impl From<&L2BookUpdate> for Orderbook {
-    fn from(u: &L2BookUpdate) -> Self {
+impl<Snapshot> From<&BookUpdateData<Snapshot>> for Orderbook {
+    fn from(u: &BookUpdateData<Snapshot>) -> Self {
         let mut bids = BTreeMap::new();
         let mut asks = BTreeMap::new();
         for l in &u.bids {

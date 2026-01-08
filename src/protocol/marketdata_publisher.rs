@@ -102,18 +102,28 @@ pub struct Ticker {
     pub price_band_upper_limit: Option<Decimal>,
 }
 
-pub type L1BookUpdate = L2BookUpdate;
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct L2BookUpdate {
+pub struct BookUpdateData<Snapshot = (), Level = L2BookLevel> {
     #[serde(flatten)]
     pub timestamp: Timestamp,
     #[serde(rename = "s")]
     pub symbol: String,
     #[serde(rename = "b")]
-    pub bids: Vec<L2BookLevel>,
+    pub bids: Vec<Level>,
     #[serde(rename = "a")]
-    pub asks: Vec<L2BookLevel>,
+    pub asks: Vec<Level>,
+    #[serde(flatten)]
+    pub snapshot: Snapshot,
+}
+
+pub type L1BookUpdate = BookUpdateData<()>;
+pub type L2BookUpdate = BookUpdateData<SnapshotFlag>;
+pub type L3BookUpdate = BookUpdateData<SnapshotFlag, L3BookLevel>;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SnapshotFlag {
+    #[serde(rename = "st")]
+    pub is_snapshot: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -122,19 +132,6 @@ pub struct L2BookLevel {
     pub price: Decimal,
     #[serde(rename = "q")]
     pub quantity: i32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
-pub struct L3BookUpdate {
-    #[serde(flatten)]
-    pub timestamp: Timestamp,
-    #[serde(rename = "s")]
-    pub symbol: String,
-    #[serde(rename = "b")]
-    pub bids: Vec<L3BookLevel>,
-    #[serde(rename = "a")]
-    pub asks: Vec<L3BookLevel>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
