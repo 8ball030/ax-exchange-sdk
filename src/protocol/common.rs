@@ -99,6 +99,7 @@ pub struct HistoryResponse<T> {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct Fill {
     pub trade_id: String,
+    pub order_id: Option<String>,
     pub user_id: String,
     pub timestamp: DateTime<Utc>,
     pub symbol: String,
