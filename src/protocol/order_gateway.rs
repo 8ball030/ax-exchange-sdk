@@ -501,9 +501,15 @@ pub enum OrderIdentifier {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
-#[serde(transparent)]
 pub struct GetOrderStatusRequest {
-    pub order: OrderIdentifier,
+    /// Order ID to query; e.g. "ORD-1234567890".
+    /// Mutually exclusive with client_order_id - exactly one must be provided.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_id: Option<OrderId>,
+    /// Client order ID to query; 64 bit integer.
+    /// Mutually exclusive with order_id - exactly one must be provided.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_order_id: Option<u64>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -558,10 +564,12 @@ mod tests {
     #[test]
     fn order_status_request_serialization() {
         let request_with_order_id = GetOrderStatusRequest {
-            order: OrderIdentifier::OrderId(OrderId::new_unchecked("O-12345")),
+            order_id: Some(OrderId::new_unchecked("O-12345")),
+            client_order_id: None,
         };
         let request_with_client_id = GetOrderStatusRequest {
-            order: OrderIdentifier::ClientOrderId(42),
+            order_id: None,
+            client_order_id: Some(42),
         };
 
         assert_json_snapshot!(request_with_order_id, @r#"
@@ -581,14 +589,16 @@ mod tests {
         let json_order_id = r#"{"order_id": "O-12345"}"#;
         let json_client_id = r#"{"client_order_id": 42}"#;
 
-        let parsed: GetOrderStatusRequest = serde_json::from_str(json_order_id).unwrap();
+        let parsed: GetOrderStatusRequest =
+            serde_json::from_str(json_order_id).expect("parse with order_id");
         assert_json_snapshot!(parsed, @r#"
         {
           "order_id": "O-12345"
         }
         "#);
 
-        let parsed: GetOrderStatusRequest = serde_json::from_str(json_client_id).unwrap();
+        let parsed: GetOrderStatusRequest =
+            serde_json::from_str(json_client_id).expect("parse with client_order_id");
         assert_json_snapshot!(parsed, @r#"
         {
           "client_order_id": 42

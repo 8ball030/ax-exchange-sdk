@@ -117,9 +117,18 @@ impl OrderGatewayRestClient {
     }
 
     pub async fn order_status(&self, order: OrderIdentifier) -> Result<OrderStatus> {
-        let payload = GetOrderStatusRequest { order };
+        let payload = match order {
+            OrderIdentifier::OrderId(order_id) => GetOrderStatusRequest {
+                order_id: Some(order_id),
+                client_order_id: None,
+            },
+            OrderIdentifier::ClientOrderId(client_order_id) => GetOrderStatusRequest {
+                order_id: None,
+                client_order_id: Some(client_order_id),
+            },
+        };
         let res: GetOrderStatusResponse = self
-            .request(reqwest::Method::POST, "order-status", Some(payload), true)
+            .request(reqwest::Method::GET, "order-status", Some(payload), true)
             .await?;
         Ok(res.status)
     }
