@@ -4,7 +4,6 @@
 
 pub const DEFAULT_PAGINATION_LIMIT: u32 = 100;
 
-use crate::types::trading::Side;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -106,8 +105,6 @@ pub struct Fill {
     pub symbol: String,
     pub price: Decimal,
     pub quantity: i64,
-    pub abs_quantity: u64,
     pub is_taker: bool,
     pub fee: Decimal,
-    pub side: Side,
 }
