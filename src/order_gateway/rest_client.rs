@@ -153,6 +153,22 @@ impl OrderGatewayRestClient {
         Ok(res.cancel_request_accepted)
     }
 
+    /// Cancel all orders, optionally filtered by symbol
+    pub async fn cancel_all_orders(&self, symbol: Option<&str>) -> Result<()> {
+        let payload = CancelAllOrdersRequest {
+            symbol: symbol.map(|s| s.to_string()),
+        };
+        let _res: CancelAllOrdersResponse = self
+            .request(
+                reqwest::Method::POST,
+                "cancel_all_orders",
+                Some(payload),
+                true,
+            )
+            .await?;
+        Ok(())
+    }
+
     pub async fn order_fills(&self, order_id: &OrderId) -> Result<Vec<Fill>> {
         let payload = GetOrderFillsRequest {
             order_id: order_id.clone(),
