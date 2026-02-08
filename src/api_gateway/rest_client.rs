@@ -234,4 +234,14 @@ impl ApiGatewayRestClient {
         self.request::<(), GetFillsResponse>(reqwest::Method::GET, "fills", None, true)
             .await
     }
+
+    pub async fn get_risk_snapshot(&self) -> Result<GetRiskSnapshotResponse> {
+        self.request::<(), GetRiskSnapshotResponse>(
+            reqwest::Method::GET,
+            "risk-snapshot",
+            None,
+            true,
+        )
+        .await
+    }
 }
