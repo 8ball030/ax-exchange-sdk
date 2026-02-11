@@ -2,8 +2,6 @@
 //!
 //! This module contains core business types for trading operations.
 
-use super::days_of_week::DaysOfWeek;
-use super::funding_rate_schedule::FundingRateSchedule;
 use crate::OrderId;
 use anyhow::{bail, Result};
 use chrono::{DateTime, Utc};
@@ -50,9 +48,8 @@ pub struct Instrument {
     pub contract_size: Option<String>,
     pub price_quotation: Option<String>,
     pub price_bands: Option<String>,
-    pub funding_schedule_time_description: Option<String>,
-    pub funding_schedule_calendar_description: Option<String>,
-    pub funding_schedule: Option<FundingRateSchedule>,
+    pub funding_frequency: Option<String>,
+    pub funding_calendar_schedule: Option<String>,
     pub trading_schedule: Option<TradingSchedule>,
 }
 
@@ -80,7 +77,7 @@ pub struct TradingSchedule {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct TradingHoursSegment {
     /// Days of the week (1=Monday, 2=Tuesday, ..., 7=Sunday)
-    pub days_of_week: DaysOfWeek,
+    pub days_of_week: Vec<u8>,
     /// Time of day when this segment starts
     pub time_of_day: TimeOfDay,
     /// Duration of this segment in seconds
@@ -101,20 +98,6 @@ pub struct TimeOfDay {
     pub minutes: u8,
     #[serde(default)]
     pub seconds: u8,
-}
-
-impl TimeOfDay {
-    pub fn validate(&self) -> Result<()> {
-        if self.hours > 23 || self.minutes > 59 || self.seconds > 59 {
-            bail!(
-                "invalid time_of_day: {:02}:{:02}:{:02}",
-                self.hours,
-                self.minutes,
-                self.seconds
-            );
-        }
-        Ok(())
-    }
 }
 
 #[derive(Default, Debug, strum::Display, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -840,11 +823,11 @@ mod tests {
     }
 
     #[test]
-    fn test_trading_schedule_serde_roundtrip() {
+    fn test_trading_schedule_serialization() {
         let schedule = TradingSchedule {
             segments: vec![
                 TradingHoursSegment {
-                    days_of_week: DaysOfWeek::weekdays(),
+                    days_of_week: vec![1, 2, 3, 4, 5],
                     time_of_day: TimeOfDay {
                         hours: 9,
                         minutes: 30,
@@ -856,7 +839,7 @@ mod tests {
                     expire_all_orders: false,
                 },
                 TradingHoursSegment {
-                    days_of_week: DaysOfWeek::weekdays(),
+                    days_of_week: vec![1, 2, 3, 4, 5],
                     time_of_day: TimeOfDay {
                         hours: 10,
                         minutes: 30,
@@ -871,14 +854,14 @@ mod tests {
         };
 
         let json = serde_json::to_string(&schedule).unwrap();
-        let deserialized: TradingSchedule = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized.segments.len(), 2);
-        assert_eq!(
-            deserialized.segments[0].days_of_week,
-            DaysOfWeek::weekdays()
-        );
-        assert_eq!(deserialized.segments[0].state, InstrumentState::PreOpen);
-        assert_eq!(deserialized.segments[1].state, InstrumentState::Open);
+
+        // Verify it contains the expected structure
+        assert!(json.contains("\"segments\""));
+        assert!(json.contains("\"days_of_week\":[1,2,3,4,5]"));
+        assert!(json.contains("\"state\":\"PRE_OPEN\""));
+        assert!(json.contains("\"state\":\"OPEN\""));
+        assert!(json.contains("\"duration_seconds\":3600"));
+        assert!(json.contains("\"duration_seconds\":21600"));
     }
 
     #[test]
@@ -908,13 +891,15 @@ mod tests {
 
         assert_eq!(schedule.segments.len(), 2);
 
+        // Check first segment
         let preopen = &schedule.segments[0];
-        assert_eq!(preopen.days_of_week, DaysOfWeek::weekdays());
+        assert_eq!(preopen.days_of_week, vec![1, 2, 3, 4, 5]);
         assert_eq!(preopen.time_of_day.hours, 9);
         assert_eq!(preopen.time_of_day.minutes, 30);
         assert_eq!(preopen.duration_seconds, 1800);
         assert_eq!(preopen.state, InstrumentState::PreOpen);
 
+        // Check second segment
         let open = &schedule.segments[1];
         assert_eq!(open.time_of_day.hours, 10);
         assert_eq!(open.time_of_day.minutes, 0);
@@ -924,6 +909,7 @@ mod tests {
 
     #[test]
     fn test_instrument_state_serialization() {
+        // Test that InstrumentState serializes to expected string values
         assert_eq!(
             serde_json::to_string(&InstrumentState::ClosedFrozen).unwrap(),
             r#""CLOSED_FROZEN""#
@@ -951,7 +937,7 @@ mod tests {
     }
 
     #[test]
-    fn test_instrument_with_trading_schedule_serde_roundtrip() {
+    fn test_instrument_with_trading_schedule_serialization() {
         let instrument = Instrument {
             symbol: "TEST-PERP".to_string(),
             multiplier: rust_decimal::Decimal::ONE,
@@ -973,12 +959,11 @@ mod tests {
             contract_size: None,
             price_quotation: None,
             price_bands: None,
-            funding_schedule_time_description: None,
-            funding_schedule_calendar_description: None,
-            funding_schedule: None,
+            funding_frequency: None,
+            funding_calendar_schedule: None,
             trading_schedule: Some(TradingSchedule {
                 segments: vec![TradingHoursSegment {
-                    days_of_week: DaysOfWeek::weekdays(),
+                    days_of_week: vec![1, 2, 3, 4, 5],
                     time_of_day: TimeOfDay {
                         hours: 9,
                         minutes: 30,
@@ -993,6 +978,12 @@ mod tests {
         };
 
         let json = serde_json::to_string(&instrument).unwrap();
+
+        // Verify trading_schedule is properly included
+        assert!(json.contains("\"trading_schedule\":{\"segments\""));
+        assert!(json.contains("\"state\":\"PRE_OPEN\""));
+
+        // Verify it can be deserialized back
         let deserialized: Instrument = serde_json::from_str(&json).unwrap();
         assert!(deserialized.trading_schedule.is_some());
         assert_eq!(deserialized.trading_schedule.unwrap().segments.len(), 1);
