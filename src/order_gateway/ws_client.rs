@@ -103,24 +103,27 @@ impl OrderGatewayWsClient {
                         callback(&text);
                     }
                     trace!("decoding order gateway message: {text}");
-                    match serde_json::from_str::<
-                        protocol::ws::Response<Box<serde_json::value::RawValue>>,
-                    >(&text)
-                    {
-                        Ok(r) => match self.handle_response(r) {
-                            Ok(Some(res)) => return Ok(OrderGatewayMessage::Response(res)),
-                            Ok(None) => continue,
-                            Err(e_res) => {
-                                error!("handling response: {e_res:?}");
-                            }
-                        },
-                        Err(e_as_response) => {
-                            match serde_json::from_str::<OrderGatewayEvent>(&text) {
-                                Ok(e) => {
-                                    self.handle_event(&e);
-                                    return Ok(OrderGatewayMessage::Event(e));
-                                }
-                                Err(e_as_event) => {
+                    // Parse as Event first: events require a "t" tag field,
+                    // so Response messages won't accidentally match as events,
+                    // but the reverse is not true.
+                    match serde_json::from_str::<OrderGatewayEvent>(&text) {
+                        Ok(e) => {
+                            self.handle_event(&e);
+                            return Ok(OrderGatewayMessage::Event(e));
+                        }
+                        Err(e_as_event) => {
+                            match serde_json::from_str::<
+                                protocol::ws::Response<Box<serde_json::value::RawValue>>,
+                            >(&text)
+                            {
+                                Ok(r) => match self.handle_response(r) {
+                                    Ok(Some(res)) => return Ok(OrderGatewayMessage::Response(res)),
+                                    Ok(None) => continue,
+                                    Err(e_res) => {
+                                        error!("handling response: {e_res:?}");
+                                    }
+                                },
+                                Err(e_as_response) => {
                                     error!(
                                         "decoding order gateway message as event: {e_as_event:?}"
                                     );
