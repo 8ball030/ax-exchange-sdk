@@ -100,6 +100,10 @@ pub struct Ticker {
     /// Price band upper limit in USD (absolute bound calculated from settlement price and upper deviation percentage)
     #[serde(rename = "pu")]
     pub price_band_upper_limit: Option<Decimal>,
+    /// Last settlement price in USD
+    #[serde(rename = "lsp")]
+    #[serde(default)]
+    pub last_settlement_price: Option<Decimal>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
