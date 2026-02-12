@@ -1,9 +1,9 @@
+use super::days_of_week::DaysOfWeek;
+use super::trading::TimeOfDay;
+use anyhow::{bail, Result};
 use chrono::{DateTime, Datelike, NaiveDate, TimeZone, Utc};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
-
-use super::days_of_week::DaysOfWeek;
-use super::trading::TimeOfDay;
 
 /// Machine-readable funding rate schedule for perpetual contracts
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -87,6 +87,27 @@ impl Default for FundingRateSchedule {
 }
 
 impl FundingRateSchedule {
+    pub fn validate(&self) -> Result<()> {
+        for funding_time in &self.times {
+            funding_time.days_of_week.validate()?;
+            funding_time.time_of_day.validate()?;
+        }
+        for exception in &self.exceptions {
+            // Validate exception date year is reasonable
+            let year = exception.date.year();
+            if !(1900..=2200).contains(&year) {
+                bail!(
+                    "Invalid exception date year: {}. Must be between 1900 and 2200",
+                    year
+                );
+            }
+            for tod in &exception.times {
+                tod.validate()?;
+            }
+        }
+        Ok(())
+    }
+
     pub fn next_funding_time(&self, now: DateTime<Utc>) -> Option<DateTime<Utc>> {
         let now_tz = now.with_timezone(&self.timezone);
 

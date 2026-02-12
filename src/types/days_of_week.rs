@@ -16,8 +16,13 @@ impl DaysOfWeek {
     /// # Errors
     /// Returns an error if any day is not in the range 1-7 (ISO 8601).
     pub fn new(days: impl Into<Vec<u8>>) -> Result<Self> {
-        let days = days.into();
-        for day in &days {
+        let t = Self(days.into());
+        t.validate()?;
+        Ok(t)
+    }
+
+    pub fn validate(&self) -> Result<()> {
+        for day in &self.0 {
             if !(1..=7).contains(day) {
                 bail!(
                     "invalid day of week: {} (must be 1-7, ISO 8601: 1=Monday, 7=Sunday)",
@@ -25,7 +30,7 @@ impl DaysOfWeek {
                 );
             }
         }
-        Ok(Self(days))
+        Ok(())
     }
 
     /// Get the inner Vec<u8> of days.
