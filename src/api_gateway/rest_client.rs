@@ -28,14 +28,18 @@ impl ApiGatewayRestClient {
         })
     }
 
+    pub fn base_url(&self) -> &Url {
+        &self.base_url
+    }
+
     /// Set the authentication token and its expiration time
     pub fn set_token(&mut self, token: String, expires_at: DateTime<Utc>) {
         self.token = Some(token);
         self.token_expires_at = Some(expires_at);
     }
 
-    /// Helper method to get current token
-    fn token(&self) -> Result<&str> {
+    /// Get the current authentication token, if valid
+    pub fn token(&self) -> Result<&str> {
         if let Some(token) = &self.token {
             if self.token_expires_at.is_some_and(|exp| Utc::now() > exp) {
                 bail!("token expired")
