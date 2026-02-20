@@ -121,6 +121,10 @@ pub struct Ticker {
     #[serde(rename = "lsp")]
     #[serde(default)]
     pub last_settlement_price: Option<Decimal>,
+    /// Last settlement time as epoch seconds
+    #[serde(rename = "lst")]
+    #[serde(default)]
+    pub last_settlement_time: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
