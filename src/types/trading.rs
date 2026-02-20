@@ -5,7 +5,7 @@
 use super::days_of_week::DaysOfWeek;
 use super::funding_rate_schedule::FundingRateSchedule;
 use crate::OrderId;
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Error, Result};
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -568,7 +568,7 @@ pub enum CandleWidth {
 }
 
 impl std::str::FromStr for CandleWidth {
-    type Err = String;
+    type Err = Error;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
@@ -579,7 +579,7 @@ impl std::str::FromStr for CandleWidth {
             "15m" => Ok(Self::FifteenMinute),
             "1h" => Ok(Self::OneHour),
             "1d" => Ok(Self::OneDay),
-            _ => Err(format!("unrecognized candle width: '{s}'")),
+            _ => Err(anyhow!("unrecognized candle width: '{s}'")),
         }
     }
 }

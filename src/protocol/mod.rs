@@ -9,6 +9,7 @@ pub mod order_gateway;
 pub mod pagination;
 pub mod settlement_engine;
 pub mod sort;
+pub mod time_range;
 pub mod ws;
 
 /// Standard error response format

@@ -1,8 +1,15 @@
+//! Sorting params and responses for API endpoints.
+
+use anyhow::{anyhow, bail, Error, Result};
 use serde::de;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::ops::Deref;
 
+/// Sort order/direction.
+///
+/// - `asc`: ascending order per field type (e.g. lexicographic, numeric, etc.)
+/// - `desc`: descending order per field type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
@@ -14,18 +21,21 @@ pub enum SortDirection {
 }
 
 impl std::str::FromStr for SortDirection {
-    type Err = String;
+    type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s.trim().to_ascii_lowercase();
         match s.as_str() {
             "asc" => Ok(Self::Asc),
             "desc" => Ok(Self::Desc),
-            other => Err(format!("invalid sort direction: {other}")),
+            other => Err(anyhow!("invalid sort direction: {other}")),
         }
     }
 }
 
+/// Sort by a single field, e.g. `field_name:asc` or `field_name:desc`.
+///
+/// Defaults to ascending if direction not specified.
 #[derive(
     Debug, Clone, PartialEq, Eq, serde_with::SerializeDisplay, serde_with::DeserializeFromStr,
 )]
@@ -45,28 +55,24 @@ impl std::fmt::Display for SortField {
 }
 
 impl std::str::FromStr for SortField {
-    type Err = String;
+    type Err = Error;
 
     fn from_str(raw: &str) -> Result<Self, Self::Err> {
         let raw = raw.trim();
         if raw.is_empty() {
-            return Err("invalid sort field".to_string());
+            bail!("invalid sort field");
         }
-
         let (field, dir) = match raw.split_once(':') {
             Some((f, d)) => (f.trim(), Some(d.trim())),
             None => (raw, None),
         };
-
         if field.is_empty() {
-            return Err("invalid sort field".to_string());
+            bail!("invalid sort field");
         }
-
         let direction = match dir {
             None => SortDirection::Asc,
             Some(d) => d.parse::<SortDirection>()?,
         };
-
         Ok(Self {
             field: field.to_owned(),
             direction,
@@ -74,6 +80,12 @@ impl std::str::FromStr for SortField {
     }
 }
 
+/// Sort by multiple fields.
+///
+/// Results are sorted by the first field, then by the next field if the
+/// first sort was a tie, and so on.
+///
+/// Canonical serialization is comma-separated list, e.g. `field1:asc,field2:desc`.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "utoipa", schema(as = Vec<String>))]
@@ -86,8 +98,9 @@ impl SortFields {
         Self(fields)
     }
 
-    /// Look up the sort direction for `field`, returning `default` if the field
-    /// is not present.
+    /// Get sort direction for a field.
+    ///
+    /// Returns the direction if the field is in the list, otherwise returns your default.
     pub fn dir(&self, field: &str, default: SortDirection) -> SortDirection {
         self.iter()
             .find(|SortField { field: f, .. }| f == field)
@@ -95,7 +108,9 @@ impl SortFields {
             .unwrap_or(default)
     }
 
-    /// If empty, populate with `default_sort`.
+    /// Use defaults if no sort fields set.
+    ///
+    /// If the list is empty, fill it with your defaults.
     pub fn or_default(&mut self, default_sort: &[(&str, SortDirection)]) -> &mut Self {
         if self.is_empty() {
             self.0 = default_sort
@@ -109,18 +124,22 @@ impl SortFields {
         self
     }
 
-    /// Check all fields against `allowed`; return an error on any unrecognized field.
-    pub fn validate(&mut self, allowed_fields: &[&str]) -> Result<&mut Self, String> {
+    /// Check that all fields are allowed.
+    ///
+    /// Returns an error if any field isn't in the allowed list.
+    pub fn validate(&mut self, allowed_fields: &[&str]) -> Result<&mut Self> {
         for sf in self.iter() {
             if !allowed_fields.contains(&sf.field.as_str()) {
-                return Err(format!("invalid sort field: {}", sf.field));
+                bail!("invalid sort field: {}", sf.field);
             }
         }
         Ok(self)
     }
 
-    /// Append `field` with `dir` if not already present, to guarantee
-    /// deterministic ordering for pagination.
+    /// Add a tie-breaker field for stable paging.
+    ///
+    /// Adds the field if it's not already in the list. This keeps sort order consistent
+    /// across pages.
     pub fn with_tie_breaker(&mut self, field: &str, dir: SortDirection) -> &mut Self {
         if !self.iter().any(|sf| sf.field == field) {
             self.0.push(SortField {
@@ -152,14 +171,14 @@ impl<'de> Deserialize<'de> for SortFields {
             Many(Vec<String>),
         }
 
-        fn parse_one(raw: &str, out: &mut Vec<SortField>) -> Result<(), String> {
+        fn parse_one(raw: &str, out: &mut Vec<SortField>) -> Result<()> {
             if raw.trim().is_empty() {
                 return Ok(());
             }
             for part in raw.split(',') {
                 let part = part.trim();
                 if part.is_empty() {
-                    return Err("invalid sort field".to_string());
+                    bail!("invalid sort field");
                 }
                 out.push(part.parse::<SortField>()?);
             }
@@ -304,7 +323,7 @@ mod tests {
     #[test]
     fn rejects_empty_field_name() {
         let err = ":asc".parse::<SortField>().unwrap_err();
-        assert_eq!(err, "invalid sort field");
+        assert_eq!(err.to_string(), "invalid sort field");
     }
 
     #[test]
@@ -383,7 +402,7 @@ mod tests {
             direction: SortDirection::Asc,
         }]);
         let err = sort.validate(&["a", "b"]).unwrap_err();
-        assert_eq!(err, "invalid sort field: c");
+        assert_eq!(err.to_string(), "invalid sort field: c");
     }
 
     #[test]

@@ -2,6 +2,7 @@ use crate::{
     protocol::{
         common::{Fill, Timestamp},
         marketdata_publisher::{Ticker, Trade},
+        pagination::{TimeseriesPage, TimeseriesPagination},
     },
     types::{BboCandle, Candle, Instrument, Token},
     Side,
@@ -199,6 +200,8 @@ pub struct Transaction {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct GetTransactionsResponse {
     pub transactions: Vec<Transaction>,
+    #[serde(flatten)]
+    pub page: TimeseriesPage,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -288,6 +291,13 @@ pub struct Position {
     pub signed_notional: Decimal,
     pub timestamp: DateTime<Utc>,
     pub realized_pnl: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
+pub struct GetFillsRequest {
+    #[serde(flatten)]
+    pub timeseries: TimeseriesPagination,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

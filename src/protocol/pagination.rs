@@ -1,20 +1,23 @@
-//! Pagination protocol types.
+//! Pagination params and responses for API endpoints.
 //!
-//! This module contains pagination parameter shapes used for API protocol communication
-//! (over-the-wire). It intentionally does not include server-side paging logic.
+//! Provides three modes of pagination:
+//!
+//! - Limit/offset: `LimitOffsetPagination` returning `LimitOffsetPage`
+//! - Cursor: `CursorPagination` returning `CursorPage`
+//! - Timeseries: `TimeseriesPagination` returning `TimeseriesPage`
 
+use crate::protocol::{sort::SortDirection, time_range::TimeRangeNs};
+use anyhow::{anyhow, bail, Error, Result};
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr, PickFirst};
+use std::fmt;
 
 pub const DEFAULT_PAGE_SIZE: u32 = 100;
 
-/// Resolve optional limit/offset into concrete values, defaulting to
-/// `DEFAULT_PAGE_SIZE` and `0` respectively.
-pub fn resolve_limit_offset(limit: Option<u32>, offset: Option<u32>) -> (u32, u32) {
-    (limit.unwrap_or(DEFAULT_PAGE_SIZE), offset.unwrap_or(0))
-}
-
-/// Limit/offset pagination parameters for API requests.
+/// Simple limit/offset paging.
+///
+/// Set `limit` for page size and `offset` to skip results. Both are
+/// optional and default to `DEFAULT_PAGE_SIZE` and 0.
 #[serde_as]
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -27,9 +30,83 @@ pub struct LimitOffsetPagination {
     pub offset: Option<u32>,
 }
 
-/// Cursor pagination parameters for API requests.
+impl LimitOffsetPagination {
+    pub fn resolve(&self) -> (u32, u32) {
+        (
+            self.limit.unwrap_or(DEFAULT_PAGE_SIZE),
+            self.offset.unwrap_or(0),
+        )
+    }
+}
+
+/// Page metadata for limit/offset paged responses.
 ///
-/// The `limit` field accepts a number or string on input, matching existing endpoint behavior.
+/// This is intended for response bodies (not query params).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct LimitOffsetPage {
+    pub total_count: u64,
+    pub limit: u32,
+    pub offset: u32,
+}
+
+/// Cursor for paging through timeseries data.
+///
+/// Get this from an API response, then pass it to your next request to fetch the
+/// next page. Format: `{timestamp_ns}:{id}`.
+#[derive(
+    Debug, Clone, PartialEq, Eq, serde_with::SerializeDisplay, serde_with::DeserializeFromStr,
+)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schemars", schemars(with = "String"))]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "utoipa", schema(as = String))]
+pub struct TimestampIdCursor {
+    pub timestamp_ns: u64,
+    pub id: String,
+}
+
+impl TimestampIdCursor {
+    pub fn into_parts(self) -> (u64, String) {
+        (self.timestamp_ns, self.id)
+    }
+}
+
+impl fmt::Display for TimestampIdCursor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{}", self.timestamp_ns, self.id)
+    }
+}
+
+impl std::str::FromStr for TimestampIdCursor {
+    type Err = Error;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let (ts, id) = raw
+            .split_once(':')
+            .ok_or_else(|| anyhow!("invalid cursor (expected \"{{timestamp_ns}}:{{id}}\")"))?;
+
+        let timestamp_ns: u64 = ts
+            .parse()
+            .map_err(|_| anyhow!("invalid cursor timestamp (expected integer nanoseconds)"))?;
+
+        let id = id.trim();
+        if id.is_empty() {
+            bail!("invalid cursor id (must be non-empty)");
+        }
+
+        Ok(Self {
+            timestamp_ns,
+            id: id.to_string(),
+        })
+    }
+}
+
+/// Cursor-based paging.
+///
+/// Pass `cursor` from a previous response to get the next page. Set `limit` to control
+/// page size (accepts number or string).
 #[serde_as]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -41,20 +118,57 @@ pub struct CursorPagination {
     pub cursor: Option<String>,
 }
 
+/// Page metadata for cursor-paged responses.
+///
+/// This is intended for response bodies (not query params).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct CursorPage {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_count: Option<u64>,
+}
+
+/// Alias of [`CursorPage`] for timeseries responses (same JSON shape).
+pub type TimeseriesPage = CursorPage;
+
+/// Query timeseries data with time range, sort, and paging.
+///
+/// Combines time filtering, sort direction, and cursor paging. Set time bounds and
+/// control result order.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "utoipa", derive(utoipa::IntoParams, utoipa::ToSchema))]
+#[cfg_attr(feature = "utoipa", into_params(parameter_in = Query))]
+pub struct TimeseriesPagination {
+    #[serde(flatten)]
+    pub range: TimeRangeNs,
+    /// Timestamp sort direction (defaults to `desc`).
+    pub sort_ts: Option<SortDirection>,
+    #[serde(flatten)]
+    pub pagination: CursorPagination,
+}
+
+impl TimeseriesPagination {
+    pub fn validate(&self) -> Result<()> {
+        self.range.validate()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // -- limit/offset tests --
 
     #[derive(Debug, Deserialize)]
     struct LimitOffsetQuery {
         #[serde(flatten)]
         pagination: LimitOffsetPagination,
-    }
-
-    #[derive(Debug, Deserialize)]
-    struct CursorQuery {
-        #[serde(flatten)]
-        pagination: CursorPagination,
     }
 
     #[test]
@@ -95,6 +209,29 @@ mod tests {
     }
 
     #[test]
+    fn resolve_defaults() {
+        let p = LimitOffsetPagination::default();
+        assert_eq!(p.resolve(), (DEFAULT_PAGE_SIZE, 0));
+    }
+
+    #[test]
+    fn resolve_explicit_values() {
+        let p = LimitOffsetPagination {
+            limit: Some(25),
+            offset: Some(50),
+        };
+        assert_eq!(p.resolve(), (25, 50));
+    }
+
+    // -- cursor tests --
+
+    #[derive(Debug, Deserialize)]
+    struct CursorQuery {
+        #[serde(flatten)]
+        pagination: CursorPagination,
+    }
+
+    #[test]
     fn cursor_query_params_decode_limit_and_cursor() {
         let parsed: CursorQuery = serde_urlencoded::from_str("limit=10&cursor=abc").unwrap();
         assert_eq!(parsed.pagination.limit, Some(10));
@@ -117,16 +254,25 @@ mod tests {
     }
 
     #[test]
-    fn resolve_limit_offset_defaults() {
-        let (limit, offset) = resolve_limit_offset(None, None);
-        assert_eq!(limit, DEFAULT_PAGE_SIZE);
-        assert_eq!(offset, 0);
+    fn timestamp_id_cursor_round_trip() {
+        let c: TimestampIdCursor = "123:abc".parse().unwrap();
+        assert_eq!(c.timestamp_ns, 123);
+        assert_eq!(c.id, "abc");
+        assert_eq!(c.to_string(), "123:abc");
     }
 
     #[test]
-    fn resolve_limit_offset_explicit_values() {
-        let (limit, offset) = resolve_limit_offset(Some(25), Some(50));
-        assert_eq!(limit, 25);
-        assert_eq!(offset, 50);
+    fn timestamp_id_cursor_rejects_missing_colon() {
+        let err = "123".parse::<TimestampIdCursor>().unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "invalid cursor (expected \"{timestamp_ns}:{id}\")"
+        );
+    }
+
+    #[test]
+    fn timestamp_id_cursor_rejects_empty_id() {
+        let err = "123:   ".parse::<TimestampIdCursor>().unwrap_err();
+        assert_eq!(err.to_string(), "invalid cursor id (must be non-empty)");
     }
 }

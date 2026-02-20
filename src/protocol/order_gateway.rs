@@ -1,6 +1,7 @@
 use crate::{
     protocol::{
         common::{Fill, Timestamp},
+        pagination::{LimitOffsetPage, LimitOffsetPagination},
         ws,
     },
     types::{Order, OrderId, OrderRejectReason, OrderState, Side},
@@ -549,8 +550,8 @@ pub struct GetOrdersRequest {
     pub symbol: Option<String>,
     pub start_time: Option<DateTime<Utc>>,
     pub end_time: Option<DateTime<Utc>>,
-    pub limit: Option<u32>,
-    pub offset: Option<u32>,
+    #[serde(flatten)]
+    pub pagination: LimitOffsetPagination,
     /// Optional order state filter
     pub order_state: Option<OrderState>,
 }
@@ -559,9 +560,8 @@ pub struct GetOrdersRequest {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct GetOrdersResponse {
     pub orders: Vec<OrderDetails>,
-    pub total_count: u64,
-    pub limit: u32,
-    pub offset: u32,
+    #[serde(flatten)]
+    pub page: LimitOffsetPage,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -688,8 +688,10 @@ mod tests {
             symbol: Some("BTCUSD-PERP".to_string()),
             start_time: Some("2024-01-01T00:00:00Z".parse().unwrap()),
             end_time: Some("2024-01-31T23:59:59Z".parse().unwrap()),
-            limit: Some(100),
-            offset: Some(0),
+            pagination: LimitOffsetPagination {
+                limit: Some(100),
+                offset: Some(0),
+            },
             order_state: Some(OrderState::Filled),
         };
         assert_json_snapshot!(request, @r#"
