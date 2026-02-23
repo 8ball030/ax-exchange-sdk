@@ -214,6 +214,30 @@ impl std::fmt::Display for Token {
     }
 }
 
+/// Type of API key, determining its access level
+#[derive(
+    Default,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    strum::Display,
+    strum::EnumString,
+)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "sqlx", derive(sqlx::Type))]
+#[cfg_attr(feature = "sqlx", sqlx(type_name = "text", rename_all = "snake_case"))]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum ApiKeyType {
+    #[default]
+    FullAccess,
+    ReadOnly,
+}
+
 /// API key information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiKey {
@@ -229,6 +253,47 @@ pub struct ApiKey {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_api_key_type_serde_roundtrip() {
+        assert_eq!(
+            serde_json::to_string(&ApiKeyType::FullAccess).unwrap(),
+            "\"full_access\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ApiKeyType::ReadOnly).unwrap(),
+            "\"read_only\""
+        );
+        let fa: ApiKeyType = serde_json::from_str("\"full_access\"").unwrap();
+        assert_eq!(fa, ApiKeyType::FullAccess);
+        let ro: ApiKeyType = serde_json::from_str("\"read_only\"").unwrap();
+        assert_eq!(ro, ApiKeyType::ReadOnly);
+    }
+
+    #[test]
+    fn test_api_key_type_default() {
+        assert_eq!(ApiKeyType::default(), ApiKeyType::FullAccess);
+    }
+
+    #[test]
+    fn test_api_key_type_from_str() {
+        use std::str::FromStr;
+        assert_eq!(
+            ApiKeyType::from_str("full_access").unwrap(),
+            ApiKeyType::FullAccess
+        );
+        assert_eq!(
+            ApiKeyType::from_str("read_only").unwrap(),
+            ApiKeyType::ReadOnly
+        );
+        assert!(ApiKeyType::from_str("unknown").is_err());
+    }
+
+    #[test]
+    fn test_api_key_type_display() {
+        assert_eq!(ApiKeyType::FullAccess.to_string(), "full_access");
+        assert_eq!(ApiKeyType::ReadOnly.to_string(), "read_only");
+    }
 
     #[test]
     fn test_valid_usernames() {

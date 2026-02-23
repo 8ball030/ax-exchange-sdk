@@ -76,6 +76,10 @@ impl<T> Response<T> {
         Self::error(request_id, 400, message.map(Into::into))
     }
 
+    pub fn forbidden<S: Into<String>>(request_id: Option<i32>, message: Option<S>) -> Self {
+        Self::error(request_id, 403, message.map(Into::into))
+    }
+
     pub fn internal_server_error<S: Into<String>>(
         request_id: Option<i32>,
         message: Option<S>,

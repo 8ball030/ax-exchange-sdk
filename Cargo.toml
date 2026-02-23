@@ -13,6 +13,7 @@ version = "13.14.0"
 [features]
 all = ["schemars", "utoipa"]
 smoke-tests = ["tokio/macros", "tokio/rt-multi-thread"]
+sqlx = ["dep:sqlx"]
 
 [dependencies]
 anyhow = { workspace = true }
@@ -32,6 +33,7 @@ schemars = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true, features = ["chrono", "schemars_1"] }
+sqlx = { workspace = true, optional = true }
 strum = { workspace = true }
 tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }

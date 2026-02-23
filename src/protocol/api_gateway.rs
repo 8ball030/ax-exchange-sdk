@@ -4,7 +4,7 @@ use crate::{
         marketdata_publisher::{Ticker, Trade},
         pagination::{TimeseriesPage, TimeseriesPagination},
     },
-    types::{BboCandle, Candle, Instrument, Token},
+    types::{ApiKeyType, BboCandle, Candle, Instrument, Token},
     Side,
 };
 use chrono::{DateTime, Utc};
@@ -47,6 +47,8 @@ pub struct CreateApiKeyRequest {
     pub password: String,
     /// Optional 2FA code, if 2FA is enabled/required for the user.
     pub totp: Option<String>,
+    #[serde(default)]
+    pub key_type: Option<ApiKeyType>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,8 +60,16 @@ pub struct CreateApiKeyResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct ApiKeyInfo {
+    pub api_key: String,
+    pub key_type: ApiKeyType,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct GetApiKeysResponse {
-    pub api_keys: Vec<String>,
+    pub api_keys: Vec<ApiKeyInfo>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

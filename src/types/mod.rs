@@ -12,7 +12,7 @@ pub mod tag;
 pub mod trading;
 
 // Re-export commonly used types for convenience
-pub use auth::{ApiKey, Password, Token, Username};
+pub use auth::{ApiKey, ApiKeyType, Password, Token, Username};
 pub use days_of_week::DaysOfWeek;
 pub use funding_rate_schedule::{FundingException, FundingRateSchedule, FundingTime};
 pub use order_id::OrderId;
