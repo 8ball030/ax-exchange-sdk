@@ -133,6 +133,7 @@ pub struct WhoAmIResponse {
     pub is_admin: bool,
     pub maker_fee: Decimal,
     pub taker_fee: Decimal,
+    pub require_2fa: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
