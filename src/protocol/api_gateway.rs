@@ -336,6 +336,8 @@ pub struct AdminTrade {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct GetAdminTradesResponse {
     pub trades: Vec<AdminTrade>,
+    #[serde(flatten)]
+    pub page: TimeseriesPage,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
