@@ -175,6 +175,11 @@ impl ArchitectX {
         OrderGatewayWsClient::connect(self.base_url.clone(), token).await
     }
 
+    pub async fn order_gateway_ws_with_cancel_on_disconnect(&self) -> Result<OrderGatewayWsClient> {
+        let token = self.refresh_user_token(false).await?;
+        OrderGatewayWsClient::connect_with_cancel_on_disconnect(self.base_url.clone(), token).await
+    }
+
     pub async fn marketdata_ws(&self) -> Result<MarketdataWsClient> {
         let token = self.refresh_user_token(false).await?;
         MarketdataWsClient::connect(self.base_url.clone(), token).await

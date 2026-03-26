@@ -11,6 +11,15 @@ use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
+/// Query parameters for the order gateway WebSocket endpoint (`/orders/ws`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct WsQueryParams {
+    /// When true, all orders placed on this connection will be cancelled on disconnect.
+    #[serde(default)]
+    pub cancel_on_disconnect: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(tag = "t")]

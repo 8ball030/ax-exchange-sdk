@@ -34,6 +34,25 @@ pub struct OrderGatewayWsClient {
 impl OrderGatewayWsClient {
     /// Connect to an order gateway and login with the provided credentials.
     pub async fn connect(base_url: Url, token: impl AsRef<str>) -> Result<Self> {
+        Self::connect_inner(base_url, token, None).await
+    }
+
+    /// Connect to an order gateway with cancel-on-disconnect enabled.
+    ///
+    /// When the connection closes, the gateway will cancel all orders
+    /// placed on this session.
+    pub async fn connect_with_cancel_on_disconnect(
+        base_url: Url,
+        token: impl AsRef<str>,
+    ) -> Result<Self> {
+        Self::connect_inner(base_url, token, Some("cancel_on_disconnect=true")).await
+    }
+
+    async fn connect_inner(
+        base_url: Url,
+        token: impl AsRef<str>,
+        query: Option<&str>,
+    ) -> Result<Self> {
         // derive ws url
         let mut ws_base_url = base_url.clone();
         let res = match base_url.scheme() {
@@ -42,7 +61,10 @@ impl OrderGatewayWsClient {
             _ => bail!("invalid url scheme"),
         };
         res.map_err(|_| anyhow!("invalid url scheme"))?;
-        let order_gateway_url = ws_base_url.join("orders/ws")?;
+        let mut order_gateway_url = ws_base_url.join("orders/ws")?;
+        if let Some(q) = query {
+            order_gateway_url.set_query(Some(q));
+        }
 
         // connect to order gateway
         info!("connecting to {order_gateway_url}");
