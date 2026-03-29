@@ -1,6 +1,8 @@
 // examples/price_streaming.rs
 use anyhow::Result;
-use ax_exchange_sdk::{ArchitectX, environment::Environment, protocol::marketdata_publisher::{MarketdataEvent, SubscriptionLevel}};
+use ax_exchange_sdk::{
+    environment::Environment, protocol::marketdata_publisher::SubscriptionLevel, ArchitectX,
+};
 use std::env;
 
 #[tokio::main]
@@ -17,9 +19,11 @@ async fn main() -> Result<()> {
     let instruments = api.get_instruments().await?;
 
     let mut market_ws = client.marketdata_ws().await?;
-    
+
     for instrument in instruments.instruments {
-        market_ws.subscribe(instrument.0.symbol.clone(), SubscriptionLevel::Level1).await?;
+        market_ws
+            .subscribe(instrument.0.symbol.clone(), SubscriptionLevel::Level1)
+            .await?;
     }
 
     let mut msg_count = 10;
