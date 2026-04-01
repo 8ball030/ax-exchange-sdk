@@ -214,6 +214,29 @@ pub struct InitialMarginRequirementResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct PreviewOrderResponse {
+    /// Initial margin percentage for the instrument (e.g. 10 means 10% IM)
+    #[serde(rename = "im_pct")]
+    pub initial_margin_pct_required: Decimal,
+    /// Additional initial margin required to place this order; zero if the
+    /// order would reduce the overall margin requirement (e.g. a closing trade)
+    #[serde(rename = "im")]
+    pub initial_margin_required: Decimal,
+    /// Current signed position in the symbol before the order fills
+    #[serde(rename = "pos_before")]
+    pub signed_position_before: i64,
+    /// Projected signed position in the symbol after the order fills
+    #[serde(rename = "pos_after")]
+    pub signed_position_after: i64,
+    /// Estimated liquidation price after the order fills, based on current
+    /// equity and maintenance margin; None if the resulting position is flat
+    #[serde(rename = "liq")]
+    pub estimated_liquidation_price: Option<Decimal>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct CancelOrderRequest {
     /// Order ID to cancel; e.g. "ORD-1234567890"
     #[serde(rename = "oid")]
