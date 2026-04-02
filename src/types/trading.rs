@@ -67,6 +67,7 @@ pub enum InstrumentCategory {
     Equities,
     Metals,
     EnergyEtfs,
+    Compute,
 }
 
 /// Trading schedule for an instrument, containing multiple trading hour segments

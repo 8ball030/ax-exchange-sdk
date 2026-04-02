@@ -670,3 +670,27 @@ pub struct PreviewAggressiveLimitOrderResponse {
     pub filled_quantity: u64,
     pub remaining_quantity: u64,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
+pub struct GetIndexPricesRequest {
+    pub symbol: String,
+    #[serde(flatten)]
+    pub timeseries: TimeseriesPagination,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct GetIndexPricesResponse {
+    pub index_prices: Vec<IndexPrice>,
+    #[serde(flatten)]
+    pub page: TimeseriesPage,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct IndexPrice {
+    pub symbol: String,
+    pub timestamp: DateTime<Utc>,
+    pub price: Decimal,
+}
