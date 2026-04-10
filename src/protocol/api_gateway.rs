@@ -435,6 +435,19 @@ pub struct GetRiskSnapshotResponse {
     pub risk_snapshot: UserRiskSnapshot,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
+pub struct GetVolumeRequest {
+    pub start_timestamp_ns: u64,
+    pub end_timestamp_ns: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct GetVolumeResponse {
+    pub volume: Decimal,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
