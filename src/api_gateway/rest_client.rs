@@ -239,8 +239,8 @@ impl ApiGatewayRestClient {
             .await
     }
 
-    pub async fn get_fills(&self) -> Result<GetFillsResponse> {
-        self.request::<(), GetFillsResponse>(reqwest::Method::GET, "fills", None, true)
+    pub async fn get_fills(&self, request: GetFillsRequest) -> Result<GetFillsResponse> {
+        self.request(reqwest::Method::GET, "fills", Some(request), true)
             .await
     }
 

@@ -346,6 +346,8 @@ pub struct Position {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
 pub struct GetFillsRequest {
+    /// Optional symbol filter. If provided, only fills for this symbol will be returned.
+    pub symbol: Option<String>,
     #[serde(flatten)]
     pub timeseries: TimeseriesPagination,
 }
@@ -354,6 +356,8 @@ pub struct GetFillsRequest {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct GetFillsResponse {
     pub fills: Vec<Fill>,
+    #[serde(flatten)]
+    pub page: TimeseriesPage,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
