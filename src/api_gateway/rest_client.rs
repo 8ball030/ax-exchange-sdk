@@ -164,6 +164,11 @@ impl ApiGatewayRestClient {
             .await
     }
 
+    pub async fn leaderboard(&self, request: LeaderboardRequest) -> Result<LeaderboardResponse> {
+        self.request(reqwest::Method::GET, "leaderboard", Some(request), true)
+            .await
+    }
+
     pub async fn setup_2fa(&self) -> Result<Setup2faResponse> {
         self.request::<(), Setup2faResponse>(reqwest::Method::POST, "mfa/setup", None, true)
             .await
