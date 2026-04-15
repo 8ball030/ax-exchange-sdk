@@ -29,6 +29,4 @@ pub struct HealthResponse {
     pub version: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub environment: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ep3_user_prefix: Option<String>,
 }
