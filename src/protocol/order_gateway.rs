@@ -10,6 +10,7 @@ use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use serde_with::{formats::CommaSeparator, serde_as, StringWithSeparator};
 
 /// Query parameters for the order gateway WebSocket endpoint (`/orders/ws`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -633,6 +634,7 @@ pub struct FillDetails {
 }
 
 /// Order history query filters
+#[serde_as]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
 pub struct GetOrdersRequest {
@@ -641,8 +643,10 @@ pub struct GetOrdersRequest {
     pub end_time: Option<DateTime<Utc>>,
     #[serde(flatten)]
     pub pagination: LimitOffsetPagination,
-    /// Optional order state filter
-    pub order_state: Option<OrderState>,
+    /// Optional comma-separated order state filter, e.g. `FILLED,CANCELED,REPLACED`
+    #[serde_as(as = "Option<StringWithSeparator::<CommaSeparator, OrderState>>")]
+    #[serde(default)]
+    pub order_states: Option<Vec<OrderState>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -825,7 +829,7 @@ mod tests {
                 limit: Some(100),
                 offset: Some(0),
             },
-            order_state: Some(OrderState::Filled),
+            order_states: Some(vec![OrderState::Filled]),
         };
         assert_json_snapshot!(request, @r#"
         {
@@ -834,7 +838,7 @@ mod tests {
           "end_time": "2024-01-31T23:59:59Z",
           "limit": 100,
           "offset": 0,
-          "order_state": "FILLED"
+          "order_states": "FILLED"
         }
         "#);
     }
