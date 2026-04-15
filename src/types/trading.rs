@@ -218,17 +218,6 @@ impl Side {
         }
     }
 
-    /// The string stored in the `historical_orders.side` column ("Buy" / "Sell").
-    /// Use this for CH queries over that column — do NOT rely on `Display`.
-    /// Note: the `trades.taker_side` column stores `"B"`/`"S"` instead; use
-    /// [`Self::as_char`] there.
-    pub fn as_historical_orders_side(&self) -> &'static str {
-        match self {
-            Self::Buy => "Buy",
-            Self::Sell => "Sell",
-        }
-    }
-
     pub fn from_char(s: &str) -> Result<Self> {
         let t = match s {
             "B" => Self::Buy,
