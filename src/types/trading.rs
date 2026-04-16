@@ -63,11 +63,12 @@ pub struct Instrument {
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum InstrumentCategory {
-    Fx,
-    Equities,
-    Metals,
-    EnergyEtfs,
     Compute,
+    Energy,
+    EnergyEtfs,
+    Equities,
+    Fx,
+    Metals,
 }
 
 /// Trading schedule for an instrument, containing multiple trading hour segments
