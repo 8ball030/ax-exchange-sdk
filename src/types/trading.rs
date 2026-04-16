@@ -69,6 +69,7 @@ pub enum InstrumentCategory {
     Equities,
     Fx,
     Metals,
+    Treasuries,
 }
 
 /// Trading schedule for an instrument, containing multiple trading hour segments
