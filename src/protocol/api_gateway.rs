@@ -174,12 +174,6 @@ pub struct GetCustomerResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
-pub struct GetCustomerResponse {
-    pub business_name: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
 pub struct GetInstrumentRequest {
     pub symbol: String,
