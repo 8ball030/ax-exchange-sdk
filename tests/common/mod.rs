@@ -3,15 +3,10 @@ macro_rules! with_private_client {
     ($client:ident, $body:expr) => {{
         dotenv::dotenv().ok();
 
-        let (api_key, api_secret, env_str) = require_env!(
-            "AX_API_KEY",
-            "AX_API_SECRET",
-            "AX_ENVIRONMENT"
-        );
+        let (api_key, api_secret, env_str) =
+            require_env!("AX_API_KEY", "AX_API_SECRET", "AX_ENVIRONMENT");
 
-        let environment: Environment = env_str
-            .parse()
-            .expect("Invalid environment variable");
+        let environment: Environment = env_str.parse().expect("Invalid environment variable");
         let $client = ArchitectX::new(environment, Some(api_key), Some(api_secret))?;
 
         let result = { $body };
