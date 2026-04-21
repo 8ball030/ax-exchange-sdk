@@ -1,13 +1,13 @@
 use crate::{
     protocol::{
         common::{Fill, Timestamp},
-        pagination::{LimitOffsetPage, LimitOffsetPagination},
+        pagination::{TimeseriesPage, TimeseriesPagination},
         ws,
     },
     types::{Order, OrderId, OrderRejectReason, OrderState, Side},
 };
 use anyhow::{anyhow, Result};
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_with::{formats::CommaSeparator, serde_as, StringWithSeparator};
@@ -639,10 +639,8 @@ pub struct FillDetails {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
 pub struct GetOrdersRequest {
     pub symbol: Option<String>,
-    pub start_time: Option<DateTime<Utc>>,
-    pub end_time: Option<DateTime<Utc>>,
     #[serde(flatten)]
-    pub pagination: LimitOffsetPagination,
+    pub timeseries: TimeseriesPagination,
     /// Optional comma-separated order state filter, e.g. `FILLED,CANCELED,REPLACED`
     #[serde_as(as = "Option<StringWithSeparator::<CommaSeparator, OrderState>>")]
     #[serde(default)]
@@ -654,7 +652,7 @@ pub struct GetOrdersRequest {
 pub struct GetOrdersResponse {
     pub orders: Vec<OrderDetails>,
     #[serde(flatten)]
-    pub page: LimitOffsetPage,
+    pub page: TimeseriesPage,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -821,23 +819,34 @@ mod tests {
 
     #[test]
     fn test_get_orders_request_serialization() {
+        use crate::protocol::{
+            pagination::CursorPagination, sort::SortDirection, time_range::TimeRangeNs,
+        };
+        // 2024-01-01T00:00:00Z = 1_704_067_200_000_000_000
+        // 2024-01-31T23:59:59Z = 1_706_745_599_000_000_000
         let request = GetOrdersRequest {
             symbol: Some("BTCUSD-PERP".to_string()),
-            start_time: Some("2024-01-01T00:00:00Z".parse().unwrap()),
-            end_time: Some("2024-01-31T23:59:59Z".parse().unwrap()),
-            pagination: LimitOffsetPagination {
-                limit: Some(100),
-                offset: Some(0),
+            timeseries: TimeseriesPagination {
+                range: TimeRangeNs::from_datetimes(
+                    Some("2024-01-01T00:00:00Z".parse().unwrap()),
+                    Some("2024-01-31T23:59:59Z".parse().unwrap()),
+                ),
+                sort_ts: Some(SortDirection::Desc),
+                pagination: CursorPagination {
+                    limit: Some(100),
+                    cursor: Some("1704067200000000000:ORD-1".to_string()),
+                },
             },
             order_states: Some(vec![OrderState::Filled]),
         };
         assert_json_snapshot!(request, @r#"
         {
           "symbol": "BTCUSD-PERP",
-          "start_time": "2024-01-01T00:00:00Z",
-          "end_time": "2024-01-31T23:59:59Z",
+          "start_timestamp_ns": 1704067200000000000,
+          "end_timestamp_ns": 1706745599000000000,
+          "sort_ts": "desc",
           "limit": 100,
-          "offset": 0,
+          "cursor": "1704067200000000000:ORD-1",
           "order_states": "FILLED"
         }
         "#);
