@@ -131,7 +131,8 @@ pub struct PlaceOrderRequest {
     /// Order price in USD as decimal string; e.g. "1.2345"
     #[serde(rename = "p")]
     pub price: Decimal,
-    /// Order time in force; e.g. "GTC", "IOC", "DAY"
+    /// Order time in force; e.g. "GTC", "IOC".
+    /// "DAY" is accepted but deprecated and will be removed in a future release — use "GTC" instead.
     #[serde(rename = "tif")]
     pub time_in_force: String,
     /// Whether the order is post-only (maker-or-cancel)
