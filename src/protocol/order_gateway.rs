@@ -144,6 +144,9 @@ pub struct PlaceOrderRequest {
     /// Optional client order ID; 64 bit integer
     #[serde(rename = "cid", skip_serializing_if = "Option::is_none")]
     pub clord_id: Option<u64>,
+    /// Self-trade prevention behavior (defaults to rejecting the incoming aggressor)
+    #[serde(rename = "st", default)]
+    pub self_trade_prevention: crate::types::SelfTradeBehavior,
 }
 
 impl PlaceOrderRequest {
@@ -182,6 +185,7 @@ impl From<crate::types::PlaceOrder> for PlaceOrderRequest {
             post_only: value.post_only,
             tag: value.tag,
             clord_id: value.clord_id,
+            self_trade_prevention: value.self_trade_prevention,
         }
     }
 }
@@ -688,6 +692,10 @@ pub struct OrderStatus {
     // TODO: should we have default values for these?
     pub filled_quantity: Option<u64>,
     pub remaining_quantity: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reject_reason: Option<OrderRejectReason>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reject_message: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -711,7 +719,114 @@ pub struct GetOrderFillsResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::SelfTradeBehavior;
     use insta::assert_json_snapshot;
+
+    #[test]
+    fn place_order_request_with_stp() {
+        let req = PlaceOrderRequest {
+            symbol: "EURUSD-PERP".to_string(),
+            side: Side::Buy,
+            quantity: 100,
+            price: "1.2345".parse().unwrap(),
+            time_in_force: "GTC".to_string(),
+            post_only: false,
+            tag: None,
+            clord_id: None,
+            self_trade_prevention: SelfTradeBehavior::CancelIncoming,
+        };
+        assert_json_snapshot!(req, @r#"
+        {
+          "s": "EURUSD-PERP",
+          "d": "B",
+          "q": 100,
+          "p": "1.2345",
+          "tif": "GTC",
+          "po": false,
+          "st": "CancelIncoming"
+        }
+        "#);
+    }
+
+    #[test]
+    fn place_order_request_default_stp() {
+        let req = PlaceOrderRequest {
+            symbol: "EURUSD-PERP".to_string(),
+            side: Side::Buy,
+            quantity: 100,
+            price: "1.2345".parse().unwrap(),
+            time_in_force: "GTC".to_string(),
+            post_only: false,
+            tag: None,
+            clord_id: None,
+            self_trade_prevention: SelfTradeBehavior::default(),
+        };
+        assert_json_snapshot!(req, @r#"
+        {
+          "s": "EURUSD-PERP",
+          "d": "B",
+          "q": 100,
+          "p": "1.2345",
+          "tif": "GTC",
+          "po": false,
+          "st": "CancelIncoming"
+        }
+        "#);
+    }
+
+    fn deser_place_order_with_stp(st_value: &str) -> PlaceOrderRequest {
+        let json = format!(
+            r#"{{"s":"TEST","d":"B","q":1,"p":"1.00","tif":"GTC","po":false,"st":"{st_value}"}}"#
+        );
+        serde_json::from_str(&json).unwrap_or_else(|e| panic!("failed to deser st={st_value}: {e}"))
+    }
+
+    #[test]
+    fn place_order_request_stp_alias_xi() {
+        assert_eq!(
+            deser_place_order_with_stp("xi").self_trade_prevention,
+            SelfTradeBehavior::CancelIncoming
+        );
+    }
+
+    #[test]
+    fn place_order_request_stp_alias_xr() {
+        assert_eq!(
+            deser_place_order_with_stp("xr").self_trade_prevention,
+            SelfTradeBehavior::CancelResting
+        );
+    }
+
+    #[test]
+    fn place_order_request_stp_alias_xb() {
+        assert_eq!(
+            deser_place_order_with_stp("xb").self_trade_prevention,
+            SelfTradeBehavior::CancelBoth
+        );
+    }
+
+    #[test]
+    fn place_order_request_stp_full_names() {
+        assert_eq!(
+            deser_place_order_with_stp("CancelIncoming").self_trade_prevention,
+            SelfTradeBehavior::CancelIncoming
+        );
+        assert_eq!(
+            deser_place_order_with_stp("CancelResting").self_trade_prevention,
+            SelfTradeBehavior::CancelResting
+        );
+        assert_eq!(
+            deser_place_order_with_stp("CancelBoth").self_trade_prevention,
+            SelfTradeBehavior::CancelBoth
+        );
+    }
+
+    #[test]
+    fn place_order_request_stp_omitted_defaults() {
+        let json = r#"{"s":"TEST","d":"B","q":1,"p":"1.00","tif":"GTC","po":false}"#;
+        let req: PlaceOrderRequest = serde_json::from_str(json).expect("deser without st");
+        assert_eq!(req.self_trade_prevention, SelfTradeBehavior::CancelIncoming);
+    }
 
     #[test]
     fn order_identifier_serialization() {

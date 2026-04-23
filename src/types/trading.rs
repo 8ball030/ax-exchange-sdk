@@ -167,6 +167,7 @@ pub struct PlaceOrder {
     pub post_only: bool,
     pub tag: Option<String>,
     pub clord_id: Option<u64>,
+    pub self_trade_prevention: SelfTradeBehavior,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -200,6 +201,24 @@ impl Order {
     pub fn is_liquidation(&self) -> bool {
         self.order_id.is_liquidation()
     }
+}
+
+#[derive(
+    Debug, Default, derive_more::Display, Clone, Copy, PartialEq, Eq, Serialize, Deserialize,
+)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub enum SelfTradeBehavior {
+    /// Cancel the incoming aggressor order; resting orders remain on the book.
+    #[default]
+    #[serde(alias = "xi")]
+    CancelIncoming,
+    /// Cancel resting orders that would self-match; allow the aggressor.
+    #[serde(alias = "xr")]
+    CancelResting,
+    /// Cancel both resting orders and the incoming aggressor.
+    #[serde(alias = "xb")]
+    CancelBoth,
 }
 
 #[derive(Debug, derive_more::Display, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

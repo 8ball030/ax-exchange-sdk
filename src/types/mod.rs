@@ -22,5 +22,6 @@ pub use tag::Tag;
 pub use trading::{
     Balance, BboCandle, Candle, DepositRecord, FundingHistory, Instrument, InstrumentState,
     InstrumentV0, OpenInterest, OpenInterestData, Order, OrderRejectReason, OrderState, PlaceOrder,
-    Position, Side, TimeOfDay, TradingHoursSegment, TradingSchedule, WithdrawalRecord,
+    Position, SelfTradeBehavior, Side, TimeOfDay, TradingHoursSegment, TradingSchedule,
+    WithdrawalRecord,
 };
