@@ -31,9 +31,7 @@ async fn main() -> Result<()> {
             .await?;
     }
 
-    let mut msg_count = 10000;
-
-    loop {
+    for _ in 0..100 {
         let msg = market_ws.market_data_receiver.recv().await;
         let event = match msg {
             Some(event) => event,
@@ -43,12 +41,6 @@ async fn main() -> Result<()> {
             }
         };
         println!("Received market data event: {:?}", event);
-        msg_count -= 1;
-        if msg_count == 0 {
-            println!("Received 10 messages, closing connection.");
-            break;
-        }
     }
-
     Ok(())
 }
