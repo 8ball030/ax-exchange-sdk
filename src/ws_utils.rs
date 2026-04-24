@@ -165,7 +165,6 @@ pub async fn connection_supervisor<E, S>(
         let backoff = std::time::Duration::from_secs(sleep_time);
         warn!("Reconnecting in {backoff:?}");
         sleep(backoff).await;
-        attempts = attempts.saturating_add(1);
     }
 
     info!("Connection supervisor exited for {url}");
