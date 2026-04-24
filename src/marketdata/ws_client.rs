@@ -1,7 +1,7 @@
+use crate::protocol::marketdata_publisher::*;
 use crate::{
     constants::{PING_INTERVAL, READ_TIMEOUT},
     protocol::{
-        self,
         marketdata_publisher::{MarketdataRequest, SubscriptionLevel},
         ws::Request as WsRequest,
     },
@@ -12,7 +12,6 @@ use futures::future::BoxFuture;
 use futures::SinkExt;
 use futures::StreamExt;
 use log::{error, info, trace, warn};
-use protocol::marketdata_publisher::*;
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -88,6 +87,34 @@ pub struct MarketdataWsClient {
     current_connection_state: Arc<Mutex<ConnectionState>>,
 }
 
+/// An independent handle for watching connection state changes.
+/// Obtain one via [`MarketdataWsClient::state_watcher`]. It holds no
+/// reference to the client, so it can be used freely inside `tokio::select!`
+/// alongside mutable borrows of the client (e.g. `market_data_receiver.recv()`).
+pub struct ConnectionStateWatcher {
+    rx: watch::Receiver<ConnectionState>,
+    current: Arc<Mutex<ConnectionState>>,
+}
+
+impl ConnectionStateWatcher {
+    /// Resolves the next time the connection state changes to a new value.
+    pub async fn run_till_event(&mut self) -> ConnectionState {
+        loop {
+            if self.rx.changed().await.is_ok() {
+                let state = *self.rx.borrow_and_update();
+                let mut cur = self.current.lock().await;
+                if state != *cur {
+                    info!("Connection state changed to: {:?}", state);
+                    *cur = state;
+                    return state;
+                }
+            } else {
+                return ConnectionState::Exited;
+            }
+        }
+    }
+}
+
 impl MarketdataWsClient {
     /// Connect to the marketdata websocket using the standard path derivation.
     /// This joins `md/ws` to the base URL (e.g., `http://example.com` -> `ws://example.com/md/ws`).
@@ -157,6 +184,15 @@ impl MarketdataWsClient {
             supervisor_handle: Arc::new(Mutex::new(supervisor_handle)),
             current_connection_state: Arc::new(Mutex::new(ConnectionState::Disconnected)),
         })
+    }
+
+    /// Returns an independent [`ConnectionStateWatcher`] that can be used
+    /// inside `tokio::select!` alongside mutable borrows of this client.
+    pub fn state_watcher(&self) -> ConnectionStateWatcher {
+        ConnectionStateWatcher {
+            rx: self.connection_state_rx.clone(),
+            current: self.current_connection_state.clone(),
+        }
     }
 
     async fn send_raw(&self, payload: String) -> Result<(), ClientError> {

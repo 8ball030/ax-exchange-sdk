@@ -1,7 +1,8 @@
 // examples/price_streaming.rs
 use anyhow::Result;
 use ax_exchange_sdk::{
-    environment::Environment, protocol::marketdata_publisher::SubscriptionLevel, ArchitectX,
+    environment::Environment, marketdata::ws_client::ConnectionState,
+    protocol::marketdata_publisher::SubscriptionLevel, ArchitectX,
 };
 use std::env;
 
@@ -20,7 +21,6 @@ async fn main() -> Result<()> {
     let api = client.api_gateway()?;
     println!("Fetching instruments...");
     let instruments = api.get_instruments().await?;
-
     println!("Collected a total of {}", instruments.instruments.len());
 
     let mut market_ws = client.marketdata_ws().await?;
@@ -31,16 +31,32 @@ async fn main() -> Result<()> {
             .await?;
     }
 
-    for _ in 0..100 {
-        let msg = market_ws.market_data_receiver.recv().await;
-        let event = match msg {
-            Some(event) => event,
-            None => {
-                println!("Market data stream closed.");
-                break;
+    let mut watcher = market_ws.state_watcher();
+
+    loop {
+        tokio::select! {
+            msg = market_ws.market_data_receiver.recv() => {
+                match msg {
+                    Some(event) => println!("Received market data event: {:?}", event),
+                    None => {
+                        println!("Market data stream closed.");
+                        break;
+                    }
+                }
             }
-        };
-        println!("Received market data event: {:?}", event);
+            state = watcher.run_till_event() => {
+                println!("Connection state changed: {:?}", state);
+                match state {
+                    ConnectionState::Exited => break,
+                    ConnectionState::Disconnected | ConnectionState::Reconnecting => {
+                        println!("Connection lost, waiting for reconnect...");
+                    }
+                    ConnectionState::Connected => {
+                        println!("Reconnected.");
+                    }
+                }
+            }
+        }
     }
     Ok(())
 }
