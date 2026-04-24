@@ -1,3 +1,4 @@
+use crate::marketdata::ws_client::TokenRefreshFn;
 use crate::marketdata::MarketdataWsClient;
 use crate::order_gateway::*;
 use crate::{api_gateway::ApiGatewayRestClient, environment::Environment};
@@ -5,6 +6,7 @@ use anyhow::{anyhow, Result};
 use arc_swap::ArcSwapOption;
 use arcstr::ArcStr;
 use chrono::{DateTime, Utc};
+use futures::FutureExt;
 use log::warn;
 use std::sync::Arc;
 use url::Url;
@@ -158,7 +160,13 @@ impl ArchitectX {
     }
 
     pub async fn marketdata_ws(&self) -> Result<MarketdataWsClient> {
-        let token = self.refresh_user_token(false).await?;
-        MarketdataWsClient::connect(self.base_url.clone(), token).await
+        let this = self.clone();
+        let refresh: TokenRefreshFn = Arc::new(move || {
+            let this = this.clone();
+            async move { this.refresh_user_token(false).await }.boxed()
+        });
+        MarketdataWsClient::connect(self.base_url.clone(), refresh)
+            .await
+            .map_err(anyhow::Error::from)
     }
 }

@@ -140,6 +140,7 @@ dependencies = [
  "simple_logger",
  "sqlx",
  "strum",
+ "thiserror 2.0.18",
  "tokio",
  "tracing-subscriber",
  "ulid",
