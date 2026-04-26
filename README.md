@@ -299,7 +299,7 @@ fn print_event(event: &OrderGatewayEvent) {
 
 The SDK supports three authentication methods via `ArchitectX`:
 
-```rust
+```
 // API key + secret (recommended for automated systems)
 client.authenticate("api-key", "api-secret").await?;
 
@@ -313,7 +313,7 @@ client.refresh_user_token(true).await?;
 
 ### 2FA / TOTP Management
 
-```rust
+```
 let api = client.api_gateway()?;
 
 // Set up 2FA — returns a TOTP provisioning URI for QR code scanning
@@ -386,7 +386,7 @@ api.disable_2fa().await?;
 
 Protect against stale orders if your process crashes or disconnects:
 
-```rust
+```
 // All orders placed on this connection are automatically cancelled
 // by the exchange if the WebSocket disconnects.
 let mut order_ws = client.order_gateway_ws_with_cancel_on_disconnect().await?;
@@ -396,7 +396,7 @@ let mut order_ws = client.order_gateway_ws_with_cancel_on_disconnect().await?;
 
 Atomically cancel an existing order and place a new one — no risk of double-fill:
 
-```rust
+```
 use ax_exchange_sdk::protocol::order_gateway::ReplaceOrderRequest;
 use rust_decimal::Decimal;
 use std::str::FromStr;
@@ -418,7 +418,7 @@ let new_order_id = order_ws.replace_order(ReplaceOrderRequest {
 
 Subscribe to live trade candles or BBO (bid/ask/mid) candles at any width:
 
-```rust
+```
 use ax_exchange_sdk::types::trading::CandleWidth;
 
 // Subscribe to 1-minute trade candles
@@ -438,7 +438,7 @@ Available candle widths: `1s`, `5s`, `1m`, `5m`, `15m`, `1h`, `1d`.
 
 Subscribe at Level 3 to see individual order quantities at each price level:
 
-```rust
+```
 use ax_exchange_sdk::protocol::marketdata_publisher::SubscriptionLevel;
 
 // Level 1: top-of-book only
@@ -453,7 +453,7 @@ market_ws.subscribe("XAU-PERP", SubscriptionLevel::Level3).await?;
 
 The `Orderbook` type can be built directly from L2 or L3 book update events:
 
-```rust
+```
 use ax_exchange_sdk::Orderbook;
 use ax_exchange_sdk::protocol::marketdata_publisher::MarketdataEvent;
 
@@ -478,7 +478,7 @@ All active market data subscriptions are automatically replayed after a reconnec
 
 Cancel all orders at once, or narrow to a single symbol:
 
-```rust
+```
 // Cancel everything
 order_ws.cancel_all_orders(None).await?;
 
@@ -490,7 +490,7 @@ order_ws.cancel_all_orders(Some("XAU-PERP")).await?;
 
 ## 💡 Risk & Account Snapshot
 
-```rust
+```
 let api = client.api_gateway()?;
 
 let snapshot = api.get_risk_snapshot().await?;
@@ -539,7 +539,7 @@ Helper methods on `OrderState`:
 
 Both WebSocket clients share the same lifecycle API:
 
-```rust
+```
 // Wait for the initial connection before sending orders
 order_ws.wait_for_connection().await;
 
@@ -565,7 +565,7 @@ order_ws.shutdown("done").await?;
 
 Both clients support connecting to a custom URL (useful for integration tests or self-hosted deployments):
 
-```rust
+```
 use ax_exchange_sdk::marketdata::MarketdataWsClient;
 use url::Url;
 
