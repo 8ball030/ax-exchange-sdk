@@ -1,7 +1,7 @@
-// examples/price_streaming.rs
 use anyhow::Result;
 use ax_exchange_sdk::{
-    environment::Environment, protocol::marketdata_publisher::SubscriptionLevel, ArchitectX,
+    environment::Environment, protocol::marketdata_publisher::SubscriptionLevel,
+    types::ws::ConnectionState, ArchitectX,
 };
 use std::env;
 
@@ -20,7 +20,6 @@ async fn main() -> Result<()> {
     let api = client.api_gateway()?;
     println!("Fetching instruments...");
     let instruments = api.get_instruments().await?;
-
     println!("Collected a total of {}", instruments.instruments.len());
 
     let mut market_ws = client.marketdata_ws().await?;
@@ -31,24 +30,32 @@ async fn main() -> Result<()> {
             .await?;
     }
 
-    let mut msg_count = 10000;
+    let mut watcher = market_ws.state_watcher();
 
     loop {
-        let msg = market_ws.market_data_receiver.recv().await;
-        let event = match msg {
-            Some(event) => event,
-            None => {
-                println!("Market data stream closed.");
-                break;
+        tokio::select! {
+            msg = market_ws.market_data_receiver.recv() => {
+                match msg {
+                    Some(event) => println!("Received market data event: {:?}", event),
+                    None => {
+                        println!("Market data stream closed.");
+                        break;
+                    }
+                }
             }
-        };
-        println!("Received market data event: {:?}", event);
-        msg_count -= 1;
-        if msg_count == 0 {
-            println!("Received 10 messages, closing connection.");
-            break;
+            state = watcher.run_till_event() => {
+                println!("Connection state changed: {:?}", state);
+                match state {
+                    ConnectionState::Exited => break,
+                    ConnectionState::Disconnected => {
+                        println!("Connection lost, waiting for reconnect...");
+                    }
+                    ConnectionState::Connected => {
+                        println!("Reconnected.");
+                    }
+                }
+            }
         }
     }
-
     Ok(())
 }

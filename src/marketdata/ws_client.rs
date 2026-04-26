@@ -1,37 +1,38 @@
+use crate::protocol::marketdata_publisher::*;
+pub use crate::types::ws::ConnectionState;
+pub use crate::ws_utils::ConnectionStateWatcher;
 use crate::{
-    constants::READ_TIMEOUT,
     protocol::{
-        self,
         marketdata_publisher::{MarketdataRequest, SubscriptionLevel},
         ws::Request as WsRequest,
     },
-    routing::extract_id,
-    types::trading::CandleWidth,
+    types::{
+        trading::CandleWidth,
+        ws::{InternalCommand, TokenRefreshFn, WsClientError},
+    },
+    ws_utils::{connection_supervisor, PendingRequests, WsSubscription},
 };
-use anyhow::{anyhow, bail, Result};
-use futures::{SinkExt, StreamExt};
-use log::{error, info, trace, warn};
-use protocol::marketdata_publisher::*;
+use dashmap::DashMap;
+use log::info;
+use log::trace;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::{
-    sync::mpsc::{Receiver, Sender},
+    sync::{
+        mpsc::{self, UnboundedSender},
+        oneshot, watch, Mutex,
+    },
     task::JoinHandle,
-    time::sleep,
 };
 use url::Url;
-use yawc::{Frame, OpCode, WebSocket};
+use yawc::Frame;
 
-pub type SendCallback = Box<dyn Fn(&str) + Send + Sync>;
-pub type ReceiveCallback = Box<dyn Fn(&str) + Send + Sync>;
+pub type ClientError = WsClientError;
 
-// Commands that can be sent to the WebSocket task
-enum WsCommand {
-    Send(String),
-}
-
+// ---------------------------------------------------------------------------
 // Subscription tracking
-#[derive(Debug, Clone)]
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq)]
 enum Subscription {
     Level {
         symbol: String,
@@ -47,54 +48,41 @@ enum Subscription {
     },
 }
 
-// Reconnection configuration
-struct ReconnectConfig {
-    max_retries: Option<usize>,
-    initial_backoff: Duration,
-    max_backoff: Duration,
-    backoff_multiplier: f64,
-}
+// ---------------------------------------------------------------------------
+// Client
+// ---------------------------------------------------------------------------
 
 pub struct MarketdataWsClient {
-    command_sender: Sender<WsCommand>,
-    next_request_id: i32,
-    pub market_data_receiver: Receiver<MarketdataEvent>,
+    write_tx: UnboundedSender<InternalCommand>,
+    pub connection_state_rx: watch::Receiver<ConnectionState>,
+    pub market_data_receiver: mpsc::Receiver<MarketdataEvent>,
     subscriptions: Arc<tokio::sync::RwLock<Vec<Subscription>>>,
-    #[allow(dead_code)] // Kept for future graceful shutdown implementation
-    task_handle: Option<JoinHandle<()>>,
-}
-
-impl ReconnectConfig {
-    fn default() -> Self {
-        Self {
-            max_retries: None, // Infinite retries
-            initial_backoff: Duration::from_millis(500),
-            max_backoff: Duration::from_secs(60),
-            backoff_multiplier: 2.0,
-        }
-    }
-
-    fn calculate_backoff(&self, attempt: usize) -> Duration {
-        let backoff_ms =
-            self.initial_backoff.as_millis() as f64 * self.backoff_multiplier.powi(attempt as i32);
-        let backoff_ms = backoff_ms.min(self.max_backoff.as_millis() as f64);
-        Duration::from_millis(backoff_ms as u64)
-    }
+    pending_requests: PendingRequests,
+    next_request_id: i32,
+    shutdown_tx: watch::Sender<bool>,
+    supervisor_handle: Arc<Mutex<JoinHandle<()>>>,
+    current_connection_state: Arc<Mutex<ConnectionState>>,
 }
 
 impl MarketdataWsClient {
     /// Connect to the marketdata websocket using the standard path derivation.
     /// This joins `md/ws` to the base URL (e.g., `http://example.com` -> `ws://example.com/md/ws`).
-    pub async fn connect(base_url: Url, token: impl AsRef<str> + Send + 'static) -> Result<Self> {
+    pub async fn connect(
+        base_url: Url,
+        token_refresh: TokenRefreshFn,
+    ) -> Result<Self, ClientError> {
         let mut ws_base_url = base_url.clone();
-        let res = match base_url.scheme() {
-            "http" => ws_base_url.set_scheme("ws"),
-            "https" => ws_base_url.set_scheme("wss"),
-            _ => bail!("invalid url scheme"),
+        match base_url.scheme() {
+            "http" => ws_base_url
+                .set_scheme("ws")
+                .map_err(|_| ClientError::InvalidScheme)?,
+            "https" => ws_base_url
+                .set_scheme("wss")
+                .map_err(|_| ClientError::InvalidScheme)?,
+            _ => return Err(ClientError::InvalidScheme),
         };
-        res.map_err(|_| anyhow!("invalid url scheme"))?;
         let md_url = ws_base_url.join("md/ws")?;
-        Self::connect_to_url(md_url, token).await
+        Self::connect_to_url(md_url, token_refresh).await
     }
 
     /// Connect to a marketdata websocket at a specific URL.
@@ -102,204 +90,270 @@ impl MarketdataWsClient {
     /// path derivation doesn't apply.
     pub async fn connect_to_url(
         mut url: Url,
-        token: impl AsRef<str> + Send + 'static,
-    ) -> Result<Self> {
-        // Convert http(s) to ws(s) if needed
-        let res = match url.scheme() {
-            "http" => url.set_scheme("ws"),
-            "https" => url.set_scheme("wss"),
-            "ws" | "wss" => Ok(()),
-            _ => bail!("invalid url scheme"),
+        token_refresh: TokenRefreshFn,
+    ) -> Result<Self, ClientError> {
+        match url.scheme() {
+            "http" => url
+                .set_scheme("ws")
+                .map_err(|_| ClientError::InvalidScheme)?,
+            "https" => url
+                .set_scheme("wss")
+                .map_err(|_| ClientError::InvalidScheme)?,
+            "ws" | "wss" => {}
+            _ => return Err(ClientError::InvalidScheme),
         };
-        res.map_err(|_| anyhow!("invalid url scheme"))?;
 
         info!("connecting to {}", url);
 
-        // Create WebSocket connection with Authorization header
-
-        let (market_data_sender, market_data_receiver) = tokio::sync::mpsc::channel(100);
-        let (command_sender, command_receiver) = tokio::sync::mpsc::channel(100);
+        let (market_data_sender, market_data_receiver) = mpsc::channel(100);
+        let (write_tx, write_rx) = mpsc::unbounded_channel::<InternalCommand>();
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let (connection_state_tx, connection_state_rx) =
+            watch::channel::<ConnectionState>(ConnectionState::Disconnected);
 
         let subscriptions = Arc::new(tokio::sync::RwLock::new(Vec::new()));
+        let pending_requests: PendingRequests = Arc::new(DashMap::new());
+
+        let supervisor_handle = tokio::spawn(connection_supervisor(
+            url.to_string(),
+            token_refresh,
+            write_rx,
+            shutdown_rx,
+            market_data_sender,
+            subscriptions.clone(),
+            connection_state_tx,
+            pending_requests.clone(),
+        ));
 
         Ok(Self {
-            command_sender,
-            next_request_id: 1,
+            write_tx,
+            connection_state_rx,
             market_data_receiver,
-            subscriptions: subscriptions.clone(),
-            task_handle: Some(Self::spawn_ws_task(
-                url,
-                token,
-                command_receiver,
-                market_data_sender,
-                subscriptions,
-            )),
+            subscriptions,
+            pending_requests,
+            next_request_id: 1,
+            shutdown_tx,
+            supervisor_handle: Arc::new(Mutex::new(supervisor_handle)),
+            current_connection_state: Arc::new(Mutex::new(ConnectionState::Disconnected)),
         })
     }
 
-    // Spawn a task to manage the WebSocket connection with automatic reconnection
-    fn spawn_ws_task(
-        url: Url,
-        token: impl AsRef<str> + Send + 'static,
-        mut command_receiver: Receiver<WsCommand>,
-        market_data_sender: Sender<MarketdataEvent>,
-        subscriptions: Arc<tokio::sync::RwLock<Vec<Subscription>>>,
-    ) -> JoinHandle<()> {
-        let token = token.as_ref().to_string();
+    /// Returns an independent [`ConnectionStateWatcher`] that can be used
+    /// inside `tokio::select!` alongside mutable borrows of this client.
+    pub fn state_watcher(&self) -> ConnectionStateWatcher {
+        ConnectionStateWatcher::new(
+            self.connection_state_rx.clone(),
+            self.current_connection_state.clone(),
+        )
+    }
 
-        tokio::spawn(async move {
-            let reconnect_config = ReconnectConfig::default();
-            let mut attempt = 0;
+    // ---------------------------------------------------------------------------
+    // Private helpers
+    // ---------------------------------------------------------------------------
 
-            loop {
-                // Attempt to connect
-                info!("attempting to connect to {} (attempt {})", url, attempt + 1);
+    async fn send_raw(&self, payload: String) -> Result<(), ClientError> {
+        self.write_tx
+            .send(InternalCommand::Send(Frame::text(payload)))
+            .map_err(|e| ClientError::Transport(Box::new(e)))
+    }
 
-                let ws_res = WebSocket::connect(url.to_string().parse().unwrap())
-                    .with_request(yawc::HttpRequestBuilder::new().header("Authorization", &token))
-                    .await;
+    /// Build, log, and send a single WS request, incrementing the request id.
+    async fn send_request<'a>(
+        &mut self,
+        request: MarketdataRequest<'a>,
+    ) -> Result<(), ClientError> {
+        let request_id = self.next_request_id;
+        self.next_request_id += 1;
+        let (tx, rx) = oneshot::channel::<Vec<u8>>();
+        self.pending_requests.insert(request_id, tx);
+        let req = WsRequest {
+            request_id,
+            request,
+        };
+        let payload = serde_json::to_string(&req)?;
+        trace!("sending request: {payload}");
+        if let Err(e) = self.send_raw(payload).await {
+            self.pending_requests.remove(&request_id);
+            return Err(e);
+        }
+        // Await and check the server's ack/error response.
+        let bytes = rx.await.map_err(|e| ClientError::Transport(Box::new(e)))?;
+        let envelope: crate::protocol::ws::Response<Box<serde_json::value::RawValue>> =
+            serde_json::from_slice(&bytes)?;
+        if let Some(err) = envelope.error {
+            return Err(ClientError::ServerError {
+                code: err.code,
+                message: err.message.unwrap_or_default(),
+            });
+        }
+        Ok(())
+    }
 
-                let mut ws = match ws_res {
-                    Ok(ws) => {
-                        info!("successfully connected to {}", url);
-                        attempt = 0; // Reset attempt counter on successful connection
-                        ws
-                    }
-                    Err(e) => {
-                        error!("failed to connect to {}: {}", url, e);
+    /// Add `sub` to the tracked subscription list if not already present.
+    async fn add_subscription(&self, sub: Subscription) {
+        let mut subs = self.subscriptions.write().await;
+        if !subs.contains(&sub) {
+            subs.push(sub);
+        }
+    }
 
-                        // Check if we should retry
-                        if let Some(max) = reconnect_config.max_retries {
-                            if attempt >= max {
-                                error!("max reconnection attempts reached, giving up");
-                                break;
-                            }
-                        }
+    /// Remove subscriptions matching `predicate` from the tracked list.
+    async fn remove_subscription(&self, predicate: impl Fn(&Subscription) -> bool) {
+        self.subscriptions.write().await.retain(|s| !predicate(s));
+    }
 
-                        // Calculate backoff and wait
-                        let backoff = reconnect_config.calculate_backoff(attempt);
-                        warn!("retrying in {:?}", backoff);
-                        sleep(backoff).await;
-                        attempt += 1;
-                        continue;
-                    }
-                };
+    // ---------------------------------------------------------------------------
+    // Public subscribe / unsubscribe API
+    // ---------------------------------------------------------------------------
 
-                // Replay all subscriptions after successful connection
-                {
-                    let subs = subscriptions.read().await;
-                    if !subs.is_empty() {
-                        info!("replaying {} subscriptions", subs.len());
-                    }
-                    for sub in subs.iter() {
-                        let payload = match Self::subscription_to_request(sub, &mut 1) {
-                            Ok(p) => p,
-                            Err(e) => {
-                                error!("failed to serialize subscription request: {}", e);
-                                continue;
-                            }
-                        };
+    pub async fn subscribe(
+        &mut self,
+        symbol: impl AsRef<str>,
+        level: SubscriptionLevel,
+    ) -> Result<(), ClientError> {
+        let symbol = symbol.as_ref().to_string();
+        let sub = Subscription::Level {
+            symbol: symbol.clone(),
+            level,
+        };
+        self.add_subscription(sub.clone()).await;
+        let result = self
+            .send_request(MarketdataRequest::Subscribe {
+                symbol: &symbol,
+                level,
+            })
+            .await;
+        if result.is_err() {
+            self.remove_subscription(|s| s == &sub).await;
+        }
+        result
+    }
 
-                        if let Err(e) = ws.send(Frame::text(payload)).await {
-                            error!("failed to replay subscription: {}", e);
-                            break;
-                        }
-                    }
-                }
+    pub async fn unsubscribe(&mut self, symbol: impl AsRef<str>) -> Result<(), ClientError> {
+        let symbol = symbol.as_ref().to_string();
+        self.remove_subscription(
+            |s| matches!(s, Subscription::Level { symbol: s, .. } if s == &symbol),
+        )
+        .await;
+        self.send_request(MarketdataRequest::Unsubscribe { symbol: &symbol })
+            .await
+    }
 
-                // Main event loop for this connection
-                let disconnect_reason = loop {
-                    tokio::select! {
-                        // Handle incoming messages from the WebSocket
-                        frame_result = ws.next() => {
-                            let frame = match frame_result {
-                                Some(f) => f,
-                                None => {
-                                    error!("ws stream ended");
-                                    break "stream_ended";
-                                }
-                            };
+    pub async fn subscribe_candles(
+        &mut self,
+        symbol: impl AsRef<str>,
+        width: CandleWidth,
+    ) -> Result<(), ClientError> {
+        let symbol = symbol.as_ref().to_string();
+        let sub = Subscription::Candles {
+            symbol: symbol.clone(),
+            width,
+        };
+        self.add_subscription(sub.clone()).await;
+        let result = self
+            .send_request(MarketdataRequest::SubscribeCandles {
+                symbol: &symbol,
+                width,
+            })
+            .await;
+        if result.is_err() {
+            self.remove_subscription(|s| s == &sub).await;
+        }
+        result
+    }
 
-                            let (opcode, _is_fin, payload) = frame.into_parts();
-                            match opcode {
-                                OpCode::Text => {
-                                    let id = extract_id(&payload);
-                                    if id.is_some() {
-                                        trace!("decoding marketdata response with id: {:?}", id);
-                                    } else {
-                                        let text = match std::str::from_utf8(&payload) {
-                                            Ok(t) => t,
-                                            Err(e) => {
-                                                error!("invalid UTF-8 in text frame: {}", e);
-                                                continue;
-                                            }
-                                        };
-                                        trace!("decoding marketdata message: {text}");
-                                        match serde_json::from_str::<Arc<protocol::marketdata_publisher::MarketdataEvent>>(
-                                            text,
-                                        ) {
-                                            Ok(e) => {
-                                                trace!("decoded marketdata event: {:?}", e);
-                                                if let Err(e) = market_data_sender.send((*e).clone()).await {
-                                                    error!("failed to send marketdata event: {}", e);
-                                                    break "send_failed";
-                                                }
-                                            }
-                                            Err(e_as_event) => {
-                                                error!("decoding marketdata message: {e_as_event:?}");
-                                            }
-                                        }
-                                    }
-                                }
-                                OpCode::Ping => {
-                                    trace!("ws ping received");
-                                }
-                                OpCode::Binary | OpCode::Pong | OpCode::Close => {}
-                                _ => {}
-                            }
-                        }
-                        // Handle commands sent to the WebSocket
-                        command = command_receiver.recv() => {
-                            match command {
-                                Some(WsCommand::Send(payload)) => {
-                                    if let Err(e) = ws.send(Frame::text(payload)).await {
-                                        error!("failed to send ws message: {}", e);
-                                        break "send_command_failed";
-                                    }
-                                }
-                                None => {
-                                    info!("command channel closed, shutting down ws task");
-                                    return; // Exit completely, don't reconnect
-                                }
-                            }
-                        }
-                        // Timeout if no message is received
-                        _ = sleep(READ_TIMEOUT) => {
-                            error!("read timeout after {:?}, connection may be stale", READ_TIMEOUT);
-                            break "read_timeout";
-                        }
-                    }
-                };
+    pub async fn unsubscribe_candles(
+        &mut self,
+        symbol: impl AsRef<str>,
+        width: CandleWidth,
+    ) -> Result<(), ClientError> {
+        let symbol = symbol.as_ref().to_string();
+        self.remove_subscription(
+            |s| matches!(s, Subscription::Candles { symbol: s, width: w } if s == &symbol && *w == width),
+        )
+        .await;
+        self.send_request(MarketdataRequest::UnsubscribeCandles {
+            symbol: &symbol,
+            width,
+        })
+        .await
+    }
 
-                warn!(
-                    "connection lost (reason: {}), will attempt to reconnect",
-                    disconnect_reason
-                );
+    pub async fn subscribe_bbo_candles(
+        &mut self,
+        symbol: impl AsRef<str>,
+        width: CandleWidth,
+    ) -> Result<(), ClientError> {
+        let symbol = symbol.as_ref().to_string();
+        let sub = Subscription::BboCandles {
+            symbol: symbol.clone(),
+            width,
+        };
+        self.add_subscription(sub.clone()).await;
+        let result = self
+            .send_request(MarketdataRequest::SubscribeBboCandles {
+                symbol: &symbol,
+                width,
+            })
+            .await;
+        if result.is_err() {
+            self.remove_subscription(|s| s == &sub).await;
+        }
+        result
+    }
 
-                // Calculate backoff before reconnecting
-                let backoff = reconnect_config.calculate_backoff(attempt);
-                warn!("reconnecting in {:?}", backoff);
-                sleep(backoff).await;
-                attempt += 1;
+    pub async fn unsubscribe_bbo_candles(
+        &mut self,
+        symbol: impl AsRef<str>,
+        width: CandleWidth,
+    ) -> Result<(), ClientError> {
+        let symbol = symbol.as_ref().to_string();
+        self.remove_subscription(
+            |s| matches!(s, Subscription::BboCandles { symbol: s, width: w } if s == &symbol && *w == width),
+        )
+        .await;
+        self.send_request(MarketdataRequest::UnsubscribeBboCandles {
+            symbol: &symbol,
+            width,
+        })
+        .await
+    }
+
+    // ---------------------------------------------------------------------------
+    // Connection lifecycle
+    // ---------------------------------------------------------------------------
+
+    pub async fn shutdown(&self, reason: &'static str) -> Result<(), ClientError> {
+        info!("Shutdown requested: {reason}");
+        let _ = self.shutdown_tx.send(true);
+        let _ = self.write_tx.send(InternalCommand::Close);
+        self.supervisor_handle.lock().await.abort();
+        Ok(())
+    }
+
+    /// Waits until the connection reaches [`ConnectionState::Connected`].
+    pub async fn wait_for_connection(&self) {
+        let mut watcher = self.state_watcher();
+        if *watcher.rx.borrow() == ConnectionState::Connected {
+            return;
+        }
+        loop {
+            match watcher.run_till_event().await {
+                ConnectionState::Connected => return,
+                ConnectionState::Exited => return,
+                _ => continue,
             }
-
-            info!("marketdata ws task exiting");
-        })
+        }
     }
+}
 
-    // Helper to convert a Subscription to a JSON request payload
-    fn subscription_to_request(sub: &Subscription, request_id: &mut i32) -> Result<String> {
-        let req = match sub {
+// ---------------------------------------------------------------------------
+// WsSubscription impl
+// ---------------------------------------------------------------------------
+
+impl WsSubscription for Subscription {
+    fn to_request(&self, request_id: &mut i32) -> Result<String, serde_json::Error> {
+        let req = match self {
             Subscription::Level { symbol, level } => WsRequest {
                 request_id: *request_id,
                 request: MarketdataRequest::Subscribe {
@@ -323,196 +377,6 @@ impl MarketdataWsClient {
             },
         };
         *request_id += 1;
-        serde_json::to_string(&req).map_err(|e| anyhow!("serialization error: {}", e))
-    }
-
-    // Helper method to send messages via the command channel
-    async fn send_message(&self, payload: String) -> Result<()> {
-        self.command_sender
-            .send(WsCommand::Send(payload))
-            .await
-            .map_err(|e| anyhow!("failed to send command: {}", e))
-    }
-
-    pub async fn subscribe(
-        &mut self,
-        symbol: impl AsRef<str>,
-        level: SubscriptionLevel,
-    ) -> Result<()> {
-        let symbol_str = symbol.as_ref().to_string();
-
-        // Track the subscription
-        {
-            let mut subs = self.subscriptions.write().await;
-            let subscription = Subscription::Level {
-                symbol: symbol_str.clone(),
-                level,
-            };
-            // Avoid duplicate subscriptions
-            if !subs.iter().any(|s| matches!(s, Subscription::Level { symbol: s, level: l } if s == &symbol_str && l == &level)) {
-                subs.push(subscription);
-            }
-        }
-
-        let req = WsRequest {
-            request_id: self.next_request_id,
-            request: MarketdataRequest::Subscribe {
-                symbol: symbol.as_ref(),
-                level,
-            },
-        };
-        self.next_request_id += 1;
-        let payload = serde_json::to_string(&req)?;
-        trace!("sending subscribe request: {payload}");
-        self.send_message(payload).await?;
-        Ok(())
-    }
-
-    pub async fn unsubscribe(&mut self, symbol: impl AsRef<str>) -> Result<()> {
-        let symbol_str = symbol.as_ref().to_string();
-
-        // Remove from tracked subscriptions
-        {
-            let mut subs = self.subscriptions.write().await;
-            subs.retain(
-                |s| !matches!(s, Subscription::Level { symbol: s, .. } if s == &symbol_str),
-            );
-        }
-
-        let req = WsRequest {
-            request_id: self.next_request_id,
-            request: MarketdataRequest::Unsubscribe {
-                symbol: symbol.as_ref(),
-            },
-        };
-        self.next_request_id += 1;
-        let payload = serde_json::to_string(&req)?;
-        trace!("sending unsubscribe request: {payload}");
-        self.send_message(payload).await?;
-        Ok(())
-    }
-
-    pub async fn subscribe_candles(
-        &mut self,
-        symbol: impl AsRef<str>,
-        width: CandleWidth,
-    ) -> Result<()> {
-        let symbol_str = symbol.as_ref().to_string();
-
-        // Track the subscription
-        {
-            let mut subs = self.subscriptions.write().await;
-            let subscription = Subscription::Candles {
-                symbol: symbol_str.clone(),
-                width,
-            };
-            // Avoid duplicate subscriptions
-            if !subs.iter().any(|s| matches!(s, Subscription::Candles { symbol: s, width: w } if s == &symbol_str && w == &width)) {
-                subs.push(subscription);
-            }
-        }
-
-        let req = WsRequest {
-            request_id: self.next_request_id,
-            request: MarketdataRequest::SubscribeCandles {
-                symbol: symbol.as_ref(),
-                width,
-            },
-        };
-        self.next_request_id += 1;
-
-        let payload = serde_json::to_string(&req)?;
-        trace!("sending candle subscribe request: {payload}");
-        self.send_message(payload).await?;
-        Ok(())
-    }
-
-    pub async fn unsubscribe_candles(
-        &mut self,
-        symbol: impl AsRef<str>,
-        width: CandleWidth,
-    ) -> Result<()> {
-        let symbol_str = symbol.as_ref().to_string();
-
-        // Remove from tracked subscriptions
-        {
-            let mut subs = self.subscriptions.write().await;
-            subs.retain(|s| !matches!(s, Subscription::Candles { symbol: s, width: w } if s == &symbol_str && w == &width));
-        }
-
-        let req = WsRequest {
-            request_id: self.next_request_id,
-            request: MarketdataRequest::UnsubscribeCandles {
-                symbol: symbol.as_ref(),
-                width,
-            },
-        };
-        self.next_request_id += 1;
-        let payload = serde_json::to_string(&req)?;
-        trace!("sending candle unsubscribe request: {payload}");
-        self.send_message(payload).await?;
-        Ok(())
-    }
-
-    pub async fn subscribe_bbo_candles(
-        &mut self,
-        symbol: impl AsRef<str>,
-        width: CandleWidth,
-    ) -> Result<()> {
-        let symbol_str = symbol.as_ref().to_string();
-
-        // Track the subscription
-        {
-            let mut subs = self.subscriptions.write().await;
-            let subscription = Subscription::BboCandles {
-                symbol: symbol_str.clone(),
-                width,
-            };
-            // Avoid duplicate subscriptions
-            if !subs.iter().any(|s| matches!(s, Subscription::BboCandles { symbol: s, width: w } if s == &symbol_str && w == &width)) {
-                subs.push(subscription);
-            }
-        }
-
-        let req = WsRequest {
-            request_id: self.next_request_id,
-            request: MarketdataRequest::SubscribeBboCandles {
-                symbol: symbol.as_ref(),
-                width,
-            },
-        };
-        self.next_request_id += 1;
-
-        let payload = serde_json::to_string(&req)?;
-        trace!("sending bbo candle subscribe request: {payload}");
-        self.send_message(payload).await?;
-        Ok(())
-    }
-
-    pub async fn unsubscribe_bbo_candles(
-        &mut self,
-        symbol: impl AsRef<str>,
-        width: CandleWidth,
-    ) -> Result<()> {
-        let symbol_str = symbol.as_ref().to_string();
-
-        // Remove from tracked subscriptions
-        {
-            let mut subs = self.subscriptions.write().await;
-            subs.retain(|s| !matches!(s, Subscription::BboCandles { symbol: s, width: w } if s == &symbol_str && w == &width));
-        }
-
-        let req = WsRequest {
-            request_id: self.next_request_id,
-            request: MarketdataRequest::UnsubscribeBboCandles {
-                symbol: symbol.as_ref(),
-                width,
-            },
-        };
-        self.next_request_id += 1;
-        let payload = serde_json::to_string(&req)?;
-        trace!("sending bbo candle unsubscribe request: {payload}");
-        self.send_message(payload).await?;
-        Ok(())
+        serde_json::to_string(&req)
     }
 }

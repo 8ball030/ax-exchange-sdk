@@ -1,10 +1,12 @@
 use crate::marketdata::MarketdataWsClient;
 use crate::order_gateway::*;
+use crate::types::ws::TokenRefreshFn;
 use crate::{api_gateway::ApiGatewayRestClient, environment::Environment};
 use anyhow::{anyhow, Result};
 use arc_swap::ArcSwapOption;
 use arcstr::ArcStr;
 use chrono::{DateTime, Utc};
+use futures::FutureExt;
 use log::warn;
 use std::sync::Arc;
 use url::Url;
@@ -148,17 +150,35 @@ impl ArchitectX {
     }
 
     pub async fn order_gateway_ws(&self) -> Result<OrderGatewayWsClient> {
-        let token = self.refresh_user_token(false).await?;
-        OrderGatewayWsClient::connect(self.base_url.clone(), token).await
+        let this = self.clone();
+        let refresh: TokenRefreshFn = Arc::new(move || {
+            let this = this.clone();
+            async move { this.refresh_user_token(false).await }.boxed()
+        });
+        OrderGatewayWsClient::connect(self.base_url.clone(), refresh)
+            .await
+            .map_err(anyhow::Error::from)
     }
 
     pub async fn order_gateway_ws_with_cancel_on_disconnect(&self) -> Result<OrderGatewayWsClient> {
-        let token = self.refresh_user_token(false).await?;
-        OrderGatewayWsClient::connect_with_cancel_on_disconnect(self.base_url.clone(), token).await
+        let this = self.clone();
+        let refresh: TokenRefreshFn = Arc::new(move || {
+            let this = this.clone();
+            async move { this.refresh_user_token(false).await }.boxed()
+        });
+        OrderGatewayWsClient::connect_with_cancel_on_disconnect(self.base_url.clone(), refresh)
+            .await
+            .map_err(anyhow::Error::from)
     }
 
     pub async fn marketdata_ws(&self) -> Result<MarketdataWsClient> {
-        let token = self.refresh_user_token(false).await?;
-        MarketdataWsClient::connect(self.base_url.clone(), token).await
+        let this = self.clone();
+        let refresh: TokenRefreshFn = Arc::new(move || {
+            let this = this.clone();
+            async move { this.refresh_user_token(false).await }.boxed()
+        });
+        MarketdataWsClient::connect(self.base_url.clone(), refresh)
+            .await
+            .map_err(anyhow::Error::from)
     }
 }
