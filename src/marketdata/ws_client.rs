@@ -10,15 +10,16 @@ use crate::{
         trading::CandleWidth,
         ws::{InternalCommand, TokenRefreshFn, WsClientError},
     },
-    ws_utils::{connection_supervisor, WsSubscription},
+    ws_utils::{connection_supervisor, PendingRequests, WsSubscription},
 };
+use dashmap::DashMap;
 use log::info;
 use log::trace;
 use std::sync::Arc;
 use tokio::{
     sync::{
         mpsc::{self, UnboundedSender},
-        watch, Mutex,
+        oneshot, watch, Mutex,
     },
     task::JoinHandle,
 };
@@ -56,6 +57,7 @@ pub struct MarketdataWsClient {
     pub connection_state_rx: watch::Receiver<ConnectionState>,
     pub market_data_receiver: mpsc::Receiver<MarketdataEvent>,
     subscriptions: Arc<tokio::sync::RwLock<Vec<Subscription>>>,
+    pending_requests: PendingRequests,
     next_request_id: i32,
     shutdown_tx: watch::Sender<bool>,
     supervisor_handle: Arc<Mutex<JoinHandle<()>>>,
@@ -110,6 +112,7 @@ impl MarketdataWsClient {
             watch::channel::<ConnectionState>(ConnectionState::Disconnected);
 
         let subscriptions = Arc::new(tokio::sync::RwLock::new(Vec::new()));
+        let pending_requests: PendingRequests = Arc::new(DashMap::new());
 
         let supervisor_handle = tokio::spawn(connection_supervisor(
             url.to_string(),
@@ -119,6 +122,7 @@ impl MarketdataWsClient {
             market_data_sender,
             subscriptions.clone(),
             connection_state_tx,
+            pending_requests.clone(),
         ));
 
         Ok(Self {
@@ -126,6 +130,7 @@ impl MarketdataWsClient {
             connection_state_rx,
             market_data_receiver,
             subscriptions,
+            pending_requests,
             next_request_id: 1,
             shutdown_tx,
             supervisor_handle: Arc::new(Mutex::new(supervisor_handle)),
@@ -157,14 +162,31 @@ impl MarketdataWsClient {
         &mut self,
         request: MarketdataRequest<'a>,
     ) -> Result<(), ClientError> {
+        let request_id = self.next_request_id;
+        self.next_request_id += 1;
+        let (tx, rx) = oneshot::channel::<Vec<u8>>();
+        self.pending_requests.insert(request_id, tx);
         let req = WsRequest {
-            request_id: self.next_request_id,
+            request_id,
             request,
         };
-        self.next_request_id += 1;
         let payload = serde_json::to_string(&req)?;
         trace!("sending request: {payload}");
-        self.send_raw(payload).await
+        if let Err(e) = self.send_raw(payload).await {
+            self.pending_requests.remove(&request_id);
+            return Err(e);
+        }
+        // Await and check the server's ack/error response.
+        let bytes = rx.await.map_err(|e| ClientError::Transport(Box::new(e)))?;
+        let envelope: crate::protocol::ws::Response<Box<serde_json::value::RawValue>> =
+            serde_json::from_slice(&bytes)?;
+        if let Some(err) = envelope.error {
+            return Err(ClientError::ServerError {
+                code: err.code,
+                message: err.message.unwrap_or_default(),
+            });
+        }
+        Ok(())
     }
 
     /// Add `sub` to the tracked subscription list if not already present.
@@ -190,16 +212,21 @@ impl MarketdataWsClient {
         level: SubscriptionLevel,
     ) -> Result<(), ClientError> {
         let symbol = symbol.as_ref().to_string();
-        self.add_subscription(Subscription::Level {
+        let sub = Subscription::Level {
             symbol: symbol.clone(),
             level,
-        })
-        .await;
-        self.send_request(MarketdataRequest::Subscribe {
-            symbol: &symbol,
-            level,
-        })
-        .await
+        };
+        self.add_subscription(sub.clone()).await;
+        let result = self
+            .send_request(MarketdataRequest::Subscribe {
+                symbol: &symbol,
+                level,
+            })
+            .await;
+        if result.is_err() {
+            self.remove_subscription(|s| s == &sub).await;
+        }
+        result
     }
 
     pub async fn unsubscribe(&mut self, symbol: impl AsRef<str>) -> Result<(), ClientError> {
@@ -218,16 +245,21 @@ impl MarketdataWsClient {
         width: CandleWidth,
     ) -> Result<(), ClientError> {
         let symbol = symbol.as_ref().to_string();
-        self.add_subscription(Subscription::Candles {
+        let sub = Subscription::Candles {
             symbol: symbol.clone(),
             width,
-        })
-        .await;
-        self.send_request(MarketdataRequest::SubscribeCandles {
-            symbol: &symbol,
-            width,
-        })
-        .await
+        };
+        self.add_subscription(sub.clone()).await;
+        let result = self
+            .send_request(MarketdataRequest::SubscribeCandles {
+                symbol: &symbol,
+                width,
+            })
+            .await;
+        if result.is_err() {
+            self.remove_subscription(|s| s == &sub).await;
+        }
+        result
     }
 
     pub async fn unsubscribe_candles(
@@ -253,16 +285,21 @@ impl MarketdataWsClient {
         width: CandleWidth,
     ) -> Result<(), ClientError> {
         let symbol = symbol.as_ref().to_string();
-        self.add_subscription(Subscription::BboCandles {
+        let sub = Subscription::BboCandles {
             symbol: symbol.clone(),
             width,
-        })
-        .await;
-        self.send_request(MarketdataRequest::SubscribeBboCandles {
-            symbol: &symbol,
-            width,
-        })
-        .await
+        };
+        self.add_subscription(sub.clone()).await;
+        let result = self
+            .send_request(MarketdataRequest::SubscribeBboCandles {
+                symbol: &symbol,
+                width,
+            })
+            .await;
+        if result.is_err() {
+            self.remove_subscription(|s| s == &sub).await;
+        }
+        result
     }
 
     pub async fn unsubscribe_bbo_candles(

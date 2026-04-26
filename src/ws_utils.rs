@@ -5,16 +5,26 @@ use crate::{
     routing::extract_id,
     types::ws::{ConnectionState, InternalCommand, TokenRefreshFn, WsClientError},
 };
+use dashmap::DashMap;
 use futures::{SinkExt, StreamExt};
 use log::{error, info, trace, warn};
 use serde::de::DeserializeOwned;
 use std::sync::Arc;
 use tokio::{
     net::TcpStream,
-    sync::{mpsc, watch, Mutex},
+    sync::{mpsc, oneshot, watch, Mutex},
     time::{interval, sleep, Instant, MissedTickBehavior},
 };
 use yawc::{Frame, MaybeTlsStream, OpCode, Options, WebSocket};
+
+// ---------------------------------------------------------------------------
+// Pending requests map
+// ---------------------------------------------------------------------------
+
+/// Shared map of in-flight request IDs → oneshot response senders.
+/// Pass an `Arc::new(DashMap::new())` from each client; responses whose
+/// `rid` field matches an entry are routed directly to the waiting caller.
+pub type PendingRequests = Arc<DashMap<i32, oneshot::Sender<Vec<u8>>>>;
 
 // ---------------------------------------------------------------------------
 // Trait
@@ -74,6 +84,7 @@ impl ConnectionStateWatcher {
 /// - `E` — the event type deserialized from incoming text frames.
 /// - `S` — the subscription type; must implement [`WsSubscription`] so
 ///   subscriptions can be replayed after each reconnect.
+#[allow(clippy::too_many_arguments)]
 pub async fn connection_supervisor<E, S>(
     url: String,
     token_refresh: TokenRefreshFn,
@@ -82,6 +93,7 @@ pub async fn connection_supervisor<E, S>(
     event_sender: mpsc::Sender<E>,
     subscriptions: Arc<tokio::sync::RwLock<Vec<S>>>,
     connection_state_tx: watch::Sender<ConnectionState>,
+    pending_requests: PendingRequests,
 ) where
     E: DeserializeOwned + Clone + Send + Sync + 'static,
     S: WsSubscription,
@@ -131,6 +143,7 @@ pub async fn connection_supervisor<E, S>(
                     &mut shutdown_rx,
                     &event_sender,
                     &subscriptions,
+                    &pending_requests,
                 )
                 .await;
 
@@ -181,6 +194,7 @@ pub async fn run_single_connection<E, S>(
     shutdown_rx: &mut watch::Receiver<bool>,
     event_sender: &mpsc::Sender<E>,
     subscriptions: &Arc<tokio::sync::RwLock<Vec<S>>>,
+    pending_requests: &PendingRequests,
 ) -> Result<(), WsClientError>
 where
     E: DeserializeOwned + Clone + Send + Sync + 'static,
@@ -260,8 +274,15 @@ where
                         match opcode {
                             OpCode::Text => {
                                 let id = extract_id(&payload);
-                                if id.is_some() {
-                                    trace!("received response with id: {id:?}");
+                                if let Some(id) = id {
+                                    trace!("received response with id: {id}");
+                                    let id = id as i32;
+                                    if let Some((_, tx)) = pending_requests.remove(&id) {
+                                        let _ = tx.send(payload.to_vec());
+                                    } else {
+                                        warn!("response for unknown request id: {id}");
+                                        warn!("payload: {:?}", String::from_utf8_lossy(&payload));
+                                    }
                                 } else {
                                     match serde_json::from_slice::<E>(&payload) {
                                         Ok(event) => {

@@ -150,13 +150,25 @@ impl ArchitectX {
     }
 
     pub async fn order_gateway_ws(&self) -> Result<OrderGatewayWsClient> {
-        let token = self.refresh_user_token(false).await?;
-        OrderGatewayWsClient::connect(self.base_url.clone(), token).await
+        let this = self.clone();
+        let refresh: TokenRefreshFn = Arc::new(move || {
+            let this = this.clone();
+            async move { this.refresh_user_token(false).await }.boxed()
+        });
+        OrderGatewayWsClient::connect(self.base_url.clone(), refresh)
+            .await
+            .map_err(anyhow::Error::from)
     }
 
     pub async fn order_gateway_ws_with_cancel_on_disconnect(&self) -> Result<OrderGatewayWsClient> {
-        let token = self.refresh_user_token(false).await?;
-        OrderGatewayWsClient::connect_with_cancel_on_disconnect(self.base_url.clone(), token).await
+        let this = self.clone();
+        let refresh: TokenRefreshFn = Arc::new(move || {
+            let this = this.clone();
+            async move { this.refresh_user_token(false).await }.boxed()
+        });
+        OrderGatewayWsClient::connect_with_cancel_on_disconnect(self.base_url.clone(), refresh)
+            .await
+            .map_err(anyhow::Error::from)
     }
 
     pub async fn marketdata_ws(&self) -> Result<MarketdataWsClient> {

@@ -35,4 +35,6 @@ pub enum WsClientError {
     Url(#[from] url::ParseError),
     #[error("Invalid URL scheme")]
     InvalidScheme,
+    #[error("Server error {code}: {message}")]
+    ServerError { code: i32, message: String },
 }
