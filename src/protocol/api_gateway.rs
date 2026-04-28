@@ -49,6 +49,8 @@ pub struct CreateApiKeyRequest {
     pub totp: Option<String>,
     #[serde(default)]
     pub key_type: Option<ApiKeyType>,
+    #[serde(default)]
+    pub allowed_ips: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,6 +66,7 @@ pub struct ApiKeyInfo {
     pub api_key: String,
     pub key_type: ApiKeyType,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    pub allowed_ips: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,6 +84,22 @@ pub struct RevokeApiKeyRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct RevokeApiKeyResponse {
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct UpdateApiKeyAllowedIpsRequest {
+    pub api_key: String,
+    pub password: String,
+    pub totp: Option<String>,
+    #[serde(default)]
+    pub allowed_ips: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct UpdateApiKeyAllowedIpsResponse {
     pub message: String,
 }
 
