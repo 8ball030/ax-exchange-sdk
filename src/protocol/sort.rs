@@ -10,14 +10,22 @@ use std::ops::Deref;
 ///
 /// - `asc`: ascending order per field type (e.g. lexicographic, numeric, etc.)
 /// - `desc`: descending order per field type
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 #[serde(rename_all = "lowercase")]
-#[strum(serialize_all = "lowercase")]
 pub enum SortDirection {
     Asc,
     Desc,
+}
+
+impl fmt::Display for SortDirection {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Asc => write!(f, "asc"),
+            Self::Desc => write!(f, "desc"),
+        }
+    }
 }
 
 impl std::str::FromStr for SortDirection {
@@ -254,6 +262,23 @@ mod tests {
     fn invalid_direction_errors_match_existing_message() {
         let err = serde_json::from_str::<SortFields>(r#""a:sideways""#).unwrap_err();
         assert!(err.to_string().contains("invalid sort direction: sideways"));
+    }
+
+    #[test]
+    fn sort_direction_parses_and_formats() {
+        assert_eq!("asc".parse::<SortDirection>().unwrap(), SortDirection::Asc);
+        assert_eq!("ASC".parse::<SortDirection>().unwrap(), SortDirection::Asc);
+        assert_eq!(
+            "desc".parse::<SortDirection>().unwrap(),
+            SortDirection::Desc
+        );
+        assert_eq!(
+            "DESC".parse::<SortDirection>().unwrap(),
+            SortDirection::Desc
+        );
+
+        assert_eq!(SortDirection::Asc.to_string(), "asc");
+        assert_eq!(SortDirection::Desc.to_string(), "desc");
     }
 
     #[test]
