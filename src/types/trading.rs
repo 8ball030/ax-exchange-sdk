@@ -4,7 +4,7 @@
 
 use super::days_of_week::DaysOfWeek;
 use super::funding_rate_schedule::FundingRateSchedule;
-use crate::OrderId;
+use crate::{ClientOrderId, OrderId};
 use anyhow::{anyhow, bail, Error, Result};
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
@@ -166,7 +166,7 @@ pub struct PlaceOrder {
     pub time_in_force: String,
     pub post_only: bool,
     pub tag: Option<String>,
-    pub clord_id: Option<u64>,
+    pub clord_id: Option<ClientOrderId>,
     pub self_trade_prevention: SelfTradeBehavior,
 }
 
@@ -180,7 +180,7 @@ pub struct Order {
     pub price: Decimal,
     pub time_in_force: String,
     pub tag: Option<String>,
-    pub clord_id: Option<u64>,
+    pub clord_id: Option<ClientOrderId>,
     #[serde(default)]
     pub post_only: bool,
     /// Timestamp when the order was received by the order gateway
@@ -456,6 +456,8 @@ pub enum OrderRejectReason {
     InsufficientCreditLimit,
     /// Original order was canceled or filled while a cancel-replace was pending
     OriginalOrderTerminated,
+    /// Client order ID is already in use by another open order
+    DuplicateClientOrderId,
     /// Unknown or unrecognized reject reason
     #[serde(other)]
     Unknown,
@@ -477,6 +479,7 @@ impl OrderRejectReason {
             Self::NoLiquidity => "no liquidity available to fill this order",
             Self::InsufficientCreditLimit => "insufficient buying power",
             Self::OriginalOrderTerminated => "original order is no longer active",
+            Self::DuplicateClientOrderId => "duplicate client order ID",
             Self::Unknown => "order rejected",
         }
     }

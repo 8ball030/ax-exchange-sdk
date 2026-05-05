@@ -1,6 +1,5 @@
 use crate::protocol::{self, order_gateway::*};
 use crate::types::PlaceOrder;
-use crate::OrderId;
 use anyhow::{anyhow, bail, Result};
 use futures::{SinkExt, StreamExt};
 use log::{debug, error, info, trace, warn};
@@ -34,7 +33,7 @@ pub struct OrderGatewayWsClient {
 impl OrderGatewayWsClient {
     /// Connect to an order gateway and login with the provided credentials.
     pub async fn connect(base_url: Url, token: impl AsRef<str>) -> Result<Self> {
-        Self::connect_inner(base_url, token, None).await
+        Self::connect_inner(base_url, "ws", token, None).await
     }
 
     /// Connect to an order gateway with cancel-on-disconnect enabled.
@@ -45,11 +44,12 @@ impl OrderGatewayWsClient {
         base_url: Url,
         token: impl AsRef<str>,
     ) -> Result<Self> {
-        Self::connect_inner(base_url, token, Some("cancel_on_disconnect=true")).await
+        Self::connect_inner(base_url, "ws", token, Some("cancel_on_disconnect=true")).await
     }
 
     async fn connect_inner(
         base_url: Url,
+        path: &str,
         token: impl AsRef<str>,
         query: Option<&str>,
     ) -> Result<Self> {
@@ -61,7 +61,7 @@ impl OrderGatewayWsClient {
             _ => bail!("invalid url scheme"),
         };
         res.map_err(|_| anyhow!("invalid url scheme"))?;
-        let mut order_gateway_url = ws_base_url.join("orders/ws")?;
+        let mut order_gateway_url = ws_base_url.join(path)?;
         if let Some(q) = query {
             order_gateway_url.set_query(Some(q));
         }
@@ -305,12 +305,17 @@ impl OrderGatewayWsClient {
         Ok(request_id)
     }
 
-    pub async fn cancel_order(&mut self, order_id: &OrderId) -> Result<i32> {
+    /// Cancel an existing order identified by either `OrderId` or
+    /// `ClientOrderId`.
+    pub async fn cancel_order(
+        &mut self,
+        order: impl Into<protocol::order_gateway::OrderReference>,
+    ) -> Result<i32> {
         let request_id = self.next_request_id;
         self.next_request_id += 1;
         let req = protocol::order_gateway::OrderGatewayRequest::CancelOrder(
             protocol::order_gateway::CancelOrderRequest {
-                order_id: order_id.clone(),
+                order: order.into(),
             },
         );
         let wrapped_req = protocol::ws::Request {
