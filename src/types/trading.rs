@@ -461,6 +461,27 @@ pub enum OrderRejectReason {
     Unknown,
 }
 
+impl OrderRejectReason {
+    /// Human-readable description of the reject reason.
+    pub fn message(&self) -> &'static str {
+        match self {
+            Self::CloseOnly => "account is in close-only mode",
+            Self::InsufficientMargin => "insufficient margin for order",
+            Self::MaxOpenOrdersExceeded => "too many open orders on this account",
+            Self::UnknownSymbol => "symbol not found",
+            Self::ExchangeClosed => "exchange is closed",
+            Self::IncorrectQuantity => "order quantity is invalid",
+            Self::InvalidPriceIncrement => "price uses more precision than the minimum tick size",
+            Self::IncorrectOrderType => "order type is not allowed for this instrument",
+            Self::PriceOutOfBounds => "price is outside the allowed band",
+            Self::NoLiquidity => "no liquidity available to fill this order",
+            Self::InsufficientCreditLimit => "insufficient buying power",
+            Self::OriginalOrderTerminated => "original order is no longer active",
+            Self::Unknown => "order rejected",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Balance {
     pub currency: String,
