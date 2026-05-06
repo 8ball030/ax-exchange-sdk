@@ -10,6 +10,7 @@ use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
+use std::collections::HashMap;
 use strum::VariantArray;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,6 +55,8 @@ pub struct Instrument {
     pub funding_schedule_calendar_description: Option<String>,
     pub funding_schedule: Option<FundingRateSchedule>,
     pub trading_schedule: Option<TradingSchedule>,
+    #[cfg_attr(feature = "utoipa", schema(value_type = Object))]
+    pub additional_product_specs: Option<HashMap<String, String>>,
 }
 
 #[derive(
@@ -1107,6 +1110,7 @@ mod tests {
                     expire_all_orders: false,
                 }],
             }),
+            additional_product_specs: None,
         };
 
         insta::assert_json_snapshot!(instrument, @r#"
@@ -1155,7 +1159,8 @@ mod tests {
                 "expire_all_orders": false
               }
             ]
-          }
+          },
+          "additional_product_specs": null
         }
         "#);
 
