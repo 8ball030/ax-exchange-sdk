@@ -713,16 +713,19 @@ impl From<ClientOrderId> for OrderReference {
 }
 
 /// Query an order's current status by server order ID or client order ID.
+///
+/// `Serialize` and `Deserialize` are implemented manually rather than via
+/// `#[serde(flatten)]` so that the request round-trips through both JSON
+/// (`reqwest::json`) and form-urlencoded (`reqwest::query`/`axum::Query`).
+/// `serde(flatten)` routes deserialization through serde's intermediate
+/// `Content` map, which does not coerce form-encoded strings into the
+/// numeric `u64` inside `ClientOrderId`.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct GetOrderStatusRequest {
+    /// Identifier of the order; either `oid` (server order id) or `cid` (client order id).
     pub order: OrderReference,
-}
-
-impl From<OrderReference> for GetOrderStatusRequest {
-    fn from(order: OrderReference) -> Self {
-        Self { order }
-    }
 }
 
 impl Serialize for GetOrderStatusRequest {
@@ -730,13 +733,13 @@ impl Serialize for GetOrderStatusRequest {
     where
         S: serde::Serializer,
     {
-        use serde::ser::SerializeStruct;
-        let mut s = serializer.serialize_struct("GetOrderStatusRequest", 1)?;
+        use serde::ser::SerializeMap;
+        let mut m = serializer.serialize_map(Some(1))?;
         match &self.order {
-            OrderReference::OrderId(oid) => s.serialize_field("order_id", oid)?,
-            OrderReference::ClientOrderId(cid) => s.serialize_field("client_order_id", &cid.0)?,
+            OrderReference::OrderId(oid) => m.serialize_entry("oid", oid)?,
+            OrderReference::ClientOrderId(cid) => m.serialize_entry("cid", &cid.0)?,
         }
-        s.end()
+        m.end()
     }
 }
 
@@ -747,24 +750,24 @@ impl<'de> Deserialize<'de> for GetOrderStatusRequest {
     {
         #[derive(Deserialize)]
         struct Helper {
-            #[serde(alias = "oid")]
-            order_id: Option<OrderId>,
-            #[serde(alias = "cid")]
-            client_order_id: Option<ClientOrderId>,
+            #[serde(default)]
+            oid: Option<OrderId>,
+            #[serde(default)]
+            cid: Option<ClientOrderId>,
         }
         let h = Helper::deserialize(deserializer)?;
-        let order = match (h.order_id, h.client_order_id) {
+        let order = match (h.oid, h.cid) {
             (Some(oid), None) => OrderReference::OrderId(oid),
             (None, Some(cid)) => cid.into(),
             (Some(_), Some(_)) => {
                 return Err(serde::de::Error::custom(
-                    "order_id and client_order_id are mutually exclusive; provide exactly one",
-                ))
+                    "oid and cid are mutually exclusive; provide exactly one",
+                ));
             }
             (None, None) => {
                 return Err(serde::de::Error::custom(
-                    "exactly one of order_id or client_order_id must be provided",
-                ))
+                    "exactly one of oid or cid must be provided",
+                ));
             }
         };
         Ok(Self { order })
@@ -945,52 +948,73 @@ mod tests {
 
         assert_json_snapshot!(request_with_order_id, @r#"
         {
-          "order_id": "O-12345"
+          "oid": "O-12345"
         }
         "#);
         assert_json_snapshot!(request_with_client_id, @r#"
         {
-          "client_order_id": 42
+          "cid": 42
         }
         "#);
     }
 
     #[test]
+    fn order_status_request_urlencoded_deserialization() {
+        let by_oid: GetOrderStatusRequest =
+            serde_urlencoded::from_str("oid=O-12345").expect("urldecode by oid");
+        assert!(matches!(by_oid.order, OrderReference::OrderId(_)));
+        let by_cid: GetOrderStatusRequest =
+            serde_urlencoded::from_str("cid=42").expect("urldecode by cid");
+        assert!(matches!(by_cid.order, OrderReference::ClientOrderId(_)));
+    }
+
+    #[test]
+    fn order_status_request_urlencoded_deserialization_rejects_both() {
+        let res: Result<GetOrderStatusRequest, _> =
+            serde_urlencoded::from_str("oid=O-12345&cid=42");
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn order_status_request_urlencoded_deserialization_rejects_neither() {
+        let res: Result<GetOrderStatusRequest, _> = serde_urlencoded::from_str("");
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn order_status_request_urlencoded_serialization() {
+        let by_oid = GetOrderStatusRequest {
+            order: OrderId::new_unchecked("O-12345").into(),
+        };
+        let by_cid = GetOrderStatusRequest {
+            order: ClientOrderId(42).into(),
+        };
+        assert_eq!(
+            serde_urlencoded::to_string(&by_oid).expect("urlencode by oid"),
+            "oid=O-12345",
+        );
+        assert_eq!(
+            serde_urlencoded::to_string(&by_cid).expect("urlencode by cid"),
+            "cid=42",
+        );
+    }
+
+    #[test]
     fn order_status_request_deserialization() {
-        let json_order_id = r#"{"order_id": "O-12345"}"#;
-        let json_client_id = r#"{"client_order_id": 42}"#;
         let json_oid = r#"{"oid": "O-12345"}"#;
         let json_cid = r#"{"cid": 42}"#;
 
-        let parsed: GetOrderStatusRequest =
-            serde_json::from_str(json_order_id).expect("parse with order_id");
+        let parsed: GetOrderStatusRequest = serde_json::from_str(json_oid).expect("parse with oid");
         assert_json_snapshot!(parsed, @r#"
         {
-          "order_id": "O-12345"
+          "oid": "O-12345"
         }
         "#);
 
-        let parsed: GetOrderStatusRequest =
-            serde_json::from_str(json_client_id).expect("parse with client_order_id");
+        let parsed: GetOrderStatusRequest = serde_json::from_str(json_cid).expect("parse with cid");
         assert_json_snapshot!(parsed, @r#"
         {
-          "client_order_id": 42
-        }
-        "#);
-
-        let parsed: GetOrderStatusRequest =
-            serde_json::from_str(json_oid).expect("parse with oid alias");
-        assert_json_snapshot!(parsed, @r#"
-        {
-          "order_id": "O-12345"
-        }
-        "#);
-
-        let parsed: GetOrderStatusRequest =
-            serde_json::from_str(json_cid).expect("parse with cid alias");
-        assert_json_snapshot!(parsed, @r#"
-        {
-          "client_order_id": 42
+          "cid": 42
         }
         "#);
     }
