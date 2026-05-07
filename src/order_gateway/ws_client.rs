@@ -46,7 +46,7 @@ pub struct OrderGatewayWsClient {
     next_request_id: i32,
     shutdown_tx: watch::Sender<bool>,
     supervisor_handle: Arc<Mutex<JoinHandle<()>>>,
-    current_connection_state: Arc<Mutex<ConnectionState>>,
+    pub current_connection_state: Arc<Mutex<ConnectionState>>,
 }
 
 impl OrderGatewayWsClient {

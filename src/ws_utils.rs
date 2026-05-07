@@ -73,6 +73,14 @@ impl ConnectionStateWatcher {
             }
         }
     }
+
+    pub fn is_connected(&self) -> bool {
+        if let Ok(cur) = self.current.try_lock() {
+            *cur == ConnectionState::Connected
+        } else {
+            false
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
