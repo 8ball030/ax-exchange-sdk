@@ -9,7 +9,10 @@ use crate::{
 use dashmap::DashMap;
 use log::info;
 use log::trace;
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicI32, Ordering},
+    Arc,
+};
 use tokio::{
     sync::{
         mpsc::{self, UnboundedSender},
@@ -43,7 +46,7 @@ pub struct OrderGatewayWsClient {
     pub connection_state_rx: watch::Receiver<ConnectionState>,
     pub event_receiver: mpsc::Receiver<OrderGatewayEvent>,
     pending_requests: PendingRequests,
-    next_request_id: i32,
+    next_request_id: AtomicI32,
     shutdown_tx: watch::Sender<bool>,
     supervisor_handle: Arc<Mutex<JoinHandle<()>>>,
     pub current_connection_state: Arc<Mutex<ConnectionState>>,
@@ -132,7 +135,7 @@ impl OrderGatewayWsClient {
             connection_state_rx,
             event_receiver,
             pending_requests,
-            next_request_id: 1,
+            next_request_id: AtomicI32::new(1),
             shutdown_tx,
             supervisor_handle: Arc::new(Mutex::new(supervisor_handle)),
             current_connection_state: Arc::new(Mutex::new(ConnectionState::Disconnected)),
@@ -157,32 +160,23 @@ impl OrderGatewayWsClient {
             .map_err(|e| ClientError::Transport(Box::new(e)))
     }
 
-    /// Build, log, and send a request, returning the assigned request ID.
-    async fn send_request(&mut self, request: OrderGatewayRequest) -> Result<i32, ClientError> {
-        let request_id = self.next_request_id;
-        self.next_request_id += 1;
+    /// Send a request and await its response, deserializing the result into `R`.
+    async fn send_request_await<R>(&self, request: OrderGatewayRequest) -> Result<R, ClientError>
+    where
+        R: serde::de::DeserializeOwned,
+    {
+        let (tx, rx) = oneshot::channel::<Vec<u8>>();
+        // Allocate the request ID and send atomically; insert the pending waiter first
+        // to avoid a race where the response arrives before we register it.
+        let request_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
+        self.pending_requests.insert(request_id, tx);
         let req = WsRequest {
             request_id,
             request,
         };
         let payload = serde_json::to_string(&req)?;
         trace!("sending request: {payload}");
-        self.send_raw(payload).await?;
-        Ok(request_id)
-    }
-
-    /// Send a request and await its response, deserializing the result into `R`.
-    async fn send_request_await<R>(
-        &mut self,
-        request: OrderGatewayRequest,
-    ) -> Result<R, ClientError>
-    where
-        R: serde::de::DeserializeOwned,
-    {
-        let (tx, rx) = oneshot::channel::<Vec<u8>>();
-        let request_id = self.next_request_id;
-        self.pending_requests.insert(request_id, tx);
-        if let Err(e) = self.send_request(request).await {
+        if let Err(e) = self.send_raw(payload).await {
             self.pending_requests.remove(&request_id);
             return Err(e);
         }
@@ -206,13 +200,13 @@ impl OrderGatewayWsClient {
     // Public API
     // ---------------------------------------------------------------------------
 
-    pub async fn get_open_orders(&mut self) -> Result<GetOpenOrdersResponse, ClientError> {
+    pub async fn get_open_orders(&self) -> Result<GetOpenOrdersResponse, ClientError> {
         self.send_request_await(OrderGatewayRequest::GetOpenOrders(GetOpenOrdersRequest {}))
             .await
     }
 
     pub async fn place_order(
-        &mut self,
+        &self,
         req: crate::types::PlaceOrder,
     ) -> Result<PlaceOrderResponse, ClientError> {
         self.send_request_await(OrderGatewayRequest::PlaceOrder(req.into()))
@@ -220,7 +214,7 @@ impl OrderGatewayWsClient {
     }
 
     pub async fn cancel_order(
-        &mut self,
+        &self,
         order_id: &crate::OrderId,
     ) -> Result<CancelOrderResponse, ClientError> {
         self.send_request_await(OrderGatewayRequest::CancelOrder(CancelOrderRequest {
@@ -230,7 +224,7 @@ impl OrderGatewayWsClient {
     }
 
     pub async fn cancel_all_orders(
-        &mut self,
+        &self,
         symbol: Option<&str>,
     ) -> Result<CancelAllOrdersResponse, ClientError> {
         self.send_request_await(OrderGatewayRequest::CancelAllOrders(
@@ -242,7 +236,7 @@ impl OrderGatewayWsClient {
     }
 
     pub async fn replace_order(
-        &mut self,
+        &self,
         req: ReplaceOrderRequest,
     ) -> Result<ReplaceOrderResponse, ClientError> {
         self.send_request_await(OrderGatewayRequest::ReplaceOrder(req))
