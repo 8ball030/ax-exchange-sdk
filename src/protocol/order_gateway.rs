@@ -667,11 +667,11 @@ pub enum OrderIdentifier {
 pub struct GetOrderStatusRequest {
     /// Order ID to query; e.g. "ORD-1234567890".
     /// Mutually exclusive with client_order_id - exactly one must be provided.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "oid")]
     pub order_id: Option<OrderId>,
     /// Client order ID to query; 64 bit integer.
     /// Mutually exclusive with order_id - exactly one must be provided.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "cid")]
     pub client_order_id: Option<u64>,
 }
 
