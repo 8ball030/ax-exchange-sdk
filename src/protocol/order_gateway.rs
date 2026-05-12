@@ -667,11 +667,11 @@ pub enum OrderIdentifier {
 pub struct GetOrderStatusRequest {
     /// Order ID to query; e.g. "ORD-1234567890".
     /// Mutually exclusive with client_order_id - exactly one must be provided.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "oid")]
     pub order_id: Option<OrderId>,
     /// Client order ID to query; 64 bit integer.
     /// Mutually exclusive with order_id - exactly one must be provided.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "cid")]
     pub client_order_id: Option<u64>,
 }
 
@@ -740,26 +740,26 @@ mod tests {
 
         assert_json_snapshot!(request_with_order_id, @r#"
         {
-          "order_id": "O-12345"
+          "oid": "O-12345"
         }
         "#);
         assert_json_snapshot!(request_with_client_id, @r#"
         {
-          "client_order_id": 42
+          "cid": 42
         }
         "#);
     }
 
     #[test]
     fn order_status_request_deserialization() {
-        let json_order_id = r#"{"order_id": "O-12345"}"#;
-        let json_client_id = r#"{"client_order_id": 42}"#;
+        let json_order_id = r#"{"oid": "O-12345"}"#;
+        let json_client_id = r#"{"cid": 42}"#;
 
         let parsed: GetOrderStatusRequest =
             serde_json::from_str(json_order_id).expect("parse with order_id");
         assert_json_snapshot!(parsed, @r#"
         {
-          "order_id": "O-12345"
+          "oid": "O-12345"
         }
         "#);
 
@@ -767,7 +767,7 @@ mod tests {
             serde_json::from_str(json_client_id).expect("parse with client_order_id");
         assert_json_snapshot!(parsed, @r#"
         {
-          "client_order_id": 42
+          "cid": 42
         }
         "#);
     }

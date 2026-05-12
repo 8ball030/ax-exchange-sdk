@@ -143,6 +143,7 @@ async fn main() -> Result<()> {
 ```rust
 // examples/order_lifecycle.rs
 use anyhow::Result;
+use ax_exchange_sdk::protocol::order_gateway::OrderIdentifier;
 use ax_exchange_sdk::{
     environment::Environment,
     protocol::order_gateway::OrderGatewayEvent,
@@ -206,6 +207,13 @@ async fn main() -> Result<()> {
 
     println!("Placed order: {:?}", res);
 
+    let order_status = client
+        .order_gateway()
+        .expect("Failed to get order gateway client")
+        .order_status(OrderIdentifier::OrderId(res.order_id.clone()))
+        .await;
+
+    println!("Order status after placing order: {:?}", order_status);
     // we now cancel the order immediately to trigger a cancel event as well
     let _cancel_res = order_ws.cancel_order(&res.order_id).await?;
 
