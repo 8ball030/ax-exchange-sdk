@@ -201,6 +201,13 @@ impl OrderGatewayWsClient {
                         OrderGatewayResponse::CancelOrderResponse
                     )
                 }
+                OrderGatewayRequestType::GetOrderStatus => {
+                    try_parse!(
+                        res,
+                        GetOrderStatusResponse,
+                        OrderGatewayResponse::GetOrderStatusResponse
+                    )
+                }
                 OrderGatewayRequestType::ReplaceOrder => {
                     try_parse!(
                         res,

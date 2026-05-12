@@ -29,6 +29,8 @@ pub enum OrderGatewayRequest {
     CancelAllOrders(CancelAllOrdersRequest),
     #[serde(rename = "x")]
     CancelOrder(CancelOrderRequest),
+    #[serde(rename = "s")]
+    GetOrderStatus(GetOrderStatusRequest),
     #[serde(rename = "o")]
     GetOpenOrders(GetOpenOrdersRequest),
     #[serde(rename = "p")]
@@ -51,6 +53,7 @@ pub enum AdminFirehoseRequest {
 pub enum OrderGatewayRequestType {
     CancelAllOrders,
     CancelOrder,
+    GetOrderStatus,
     GetOpenOrders,
     PlaceOrder,
     ReplaceOrder,
@@ -63,6 +66,7 @@ pub enum OrderGatewayRequestType {
 pub enum OrderGatewayResponse {
     CancelAllOrdersResponse(CancelAllOrdersResponse),
     CancelOrderResponse(CancelOrderResponse),
+    GetOrderStatusResponse(GetOrderStatusResponse),
     GetOpenOrdersResponse(GetOpenOrdersResponse),
     LoginResponse(LoginResponse),
     PlaceOrderResponse(PlaceOrderResponse),
@@ -775,6 +779,7 @@ impl<'de> Deserialize<'de> for GetOrderStatusRequest {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
 pub struct OrderStatus {
     pub symbol: String,
@@ -792,6 +797,7 @@ pub struct OrderStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
 pub struct GetOrderStatusResponse {
     pub status: OrderStatus,
