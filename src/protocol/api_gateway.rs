@@ -394,10 +394,22 @@ pub struct FundingTransaction {
     pub settlement_price: Decimal,
 }
 
+/// Query parameters for `GET /funding-transactions` (session-authenticated user),
+/// including optional time range, sort direction, cursor, and page size.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
+pub struct GetFundingTransactionsQueryParams {
+    pub symbol: Option<String>,
+    #[serde(flatten)]
+    pub timeseries: TimeseriesPagination,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct GetFundingTransactionsResponse {
     pub funding_transactions: Vec<FundingTransaction>,
+    #[serde(flatten)]
+    pub page: TimeseriesPage,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
