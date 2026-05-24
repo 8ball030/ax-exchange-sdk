@@ -174,8 +174,6 @@ pub struct WhoAmIResponse {
 pub struct WhoAmIAccount {
     pub id: String,
     pub name: String,
-    pub ep3_username: String,
-    pub ep3_account: String,
     pub is_close_only: bool,
     pub is_frozen: bool,
     pub maker_fee: Decimal,
