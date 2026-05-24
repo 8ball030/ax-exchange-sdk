@@ -741,9 +741,13 @@ pub struct GetCandleResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
 pub struct GetBboCandlesRequest {
+    /// Instrument symbol (e.g. "XAU-PERP")
     pub symbol: String,
+    /// Start of the time range (nanoseconds since epoch, inclusive)
     pub start_timestamp_ns: u64,
+    /// End of the time range (nanoseconds since epoch, inclusive)
     pub end_timestamp_ns: u64,
+    /// Candle width (e.g. "1s", "1m", "1h", "1d")
     pub candle_width: String,
 }
 
@@ -756,7 +760,9 @@ pub struct GetBboCandlesResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
 pub struct GetBboCandleRequest {
+    /// Instrument symbol (e.g. "XAU-PERP")
     pub symbol: String,
+    /// Candle width (e.g. "1s", "1m", "1h", "1d")
     pub candle_width: String,
 }
 

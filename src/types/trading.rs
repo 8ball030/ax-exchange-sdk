@@ -528,22 +528,37 @@ pub struct Candle {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct BboCandle {
+    /// Instrument symbol (e.g. "XAU-PERP")
     pub symbol: String,
+    /// Start timestamp of the candle interval (epoch seconds)
     #[serde(rename = "ts")]
     #[serde_as(as = "serde_with::TimestampSeconds")]
     pub timestamp: DateTime<Utc>,
+    /// Best bid price at the start of the interval
     pub bid_open: Option<Decimal>,
+    /// Highest best bid price during the interval
     pub bid_high: Option<Decimal>,
+    /// Lowest best bid price during the interval
     pub bid_low: Option<Decimal>,
+    /// Best bid price at the end of the interval
     pub bid_close: Option<Decimal>,
+    /// Best ask price at the start of the interval
     pub ask_open: Option<Decimal>,
+    /// Highest best ask price during the interval
     pub ask_high: Option<Decimal>,
+    /// Lowest best ask price during the interval
     pub ask_low: Option<Decimal>,
+    /// Best ask price at the end of the interval
     pub ask_close: Option<Decimal>,
+    /// Mid-price ((bid + ask) / 2) at the start of the interval
     pub mid_open: Option<Decimal>,
+    /// Highest mid-price during the interval
     pub mid_high: Option<Decimal>,
+    /// Lowest mid-price during the interval
     pub mid_low: Option<Decimal>,
+    /// Mid-price at the end of the interval
     pub mid_close: Option<Decimal>,
+    /// Duration of the candle interval
     pub width: CandleWidth,
 }
 

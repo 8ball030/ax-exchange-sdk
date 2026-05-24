@@ -123,7 +123,7 @@ pub struct AdminLoginResponse {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct PlaceOrderRequest {
-    /// Order symbol; e.g. GBPUSD-PERP, EURUSD-PERP
+    /// Order symbol; e.g. XAU-PERP, EURUSD-PERP
     #[serde(rename = "s")]
     pub symbol: String,
     /// Order side; buying ("B") or selling ("S")
@@ -1179,7 +1179,7 @@ mod tests {
         // 2024-01-01T00:00:00Z = 1_704_067_200_000_000_000
         // 2024-01-31T23:59:59Z = 1_706_745_599_000_000_000
         let request = GetOrdersRequest {
-            symbol: Some("BTCUSD-PERP".to_string()),
+            symbol: Some("XAU-PERP".to_string()),
             timeseries: TimeseriesPagination {
                 range: TimeRangeNs::from_datetimes(
                     Some("2024-01-01T00:00:00Z".parse().unwrap()),
@@ -1195,7 +1195,7 @@ mod tests {
         };
         assert_json_snapshot!(request, @r#"
         {
-          "symbol": "BTCUSD-PERP",
+          "symbol": "XAU-PERP",
           "start_timestamp_ns": 1704067200000000000,
           "end_timestamp_ns": 1706745599000000000,
           "sort_ts": "desc",

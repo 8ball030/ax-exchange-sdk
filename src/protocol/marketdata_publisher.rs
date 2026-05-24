@@ -73,7 +73,7 @@ pub enum MarketdataEvent {
 pub struct Ticker {
     #[serde(flatten)]
     pub timestamp: Timestamp,
-    /// Instrument symbol; e.g. GBPUSD-PERP, EURUSD-PERP
+    /// Instrument symbol; e.g. XAU-PERP, EURUSD-PERP
     #[serde(rename = "s")]
     pub symbol: String,
     /// Last trade price in USD
