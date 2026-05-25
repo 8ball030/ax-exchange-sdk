@@ -97,6 +97,9 @@ pub struct LoginResponse {
     pub logged_in: String,
     #[serde(rename = "o")]
     pub open_orders: Option<Vec<OrderDetails>>,
+    /// Whether cancel-on-disconnect is active for this session.
+    #[serde(rename = "cod", default)]
+    pub cancel_on_disconnect: bool,
 }
 
 impl LoginResponse {
