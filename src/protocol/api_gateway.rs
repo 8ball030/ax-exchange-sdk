@@ -189,6 +189,7 @@ pub struct WhoAmIAccount {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct GetCustomerResponse {
     pub business_name: Option<String>,
+    pub doing_business_as: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
