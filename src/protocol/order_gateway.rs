@@ -154,14 +154,21 @@ pub struct PlaceOrderRequest {
     /// Self-trade prevention behavior (defaults to rejecting the incoming aggressor)
     #[serde(rename = "st", default)]
     pub self_trade_prevention: crate::types::SelfTradeBehavior,
+    /// Optional account ID. If omitted, default (primary) user account is used.
+    #[serde(rename = "aid", skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
 }
 
 impl PlaceOrderRequest {
-    /// Convert this place order request into a pending order
+    /// Convert this place order request into a pending order. If
+    /// `self.account_id` is `None`, the order is attributed to the user's
+    /// default account (whose id matches the user id).
     pub fn into_pending_order(self, order_id: OrderId, user_id: String) -> crate::types::Order {
+        let account_id = self.account_id.unwrap_or_else(|| user_id.clone());
         crate::types::Order {
             order_id,
             user_id,
+            account_id,
             symbol: self.symbol,
             side: self.side,
             quantity: self.quantity,
@@ -193,6 +200,7 @@ impl From<crate::types::PlaceOrder> for PlaceOrderRequest {
             tag: value.tag,
             clord_id: value.clord_id,
             self_trade_prevention: value.self_trade_prevention,
+            account_id: value.account_id,
         }
     }
 }
@@ -305,6 +313,9 @@ pub struct CancelAllOrdersRequest {
     /// Optional symbol filter. If provided, only orders for this symbol will be canceled.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub symbol: Option<String>,
+    /// Optional account ID. If omitted, default (primary) user account is used.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
 }
 
 /// Response for canceling all orders.
@@ -316,7 +327,11 @@ pub struct CancelAllOrdersResponse {}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
-pub struct GetOpenOrdersRequest {}
+pub struct GetOpenOrdersRequest {
+    /// Optional account ID. If omitted, default (primary) user account is used.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -547,6 +562,8 @@ pub struct OrderDetails {
     pub order_id: OrderId,
     #[serde(rename = "u")]
     pub user_id: String,
+    #[serde(rename = "aid")]
+    pub account_id: String,
     #[serde(rename = "s")]
     pub symbol: String,
     #[serde(rename = "p")]
@@ -584,6 +601,7 @@ impl TryFrom<OrderDetails> for crate::types::Order {
         Ok(crate::types::Order {
             order_id: value.order_id,
             user_id: value.user_id,
+            account_id: value.account_id,
             symbol: value.symbol,
             price: value.price,
             quantity: value.quantity,
@@ -611,6 +629,7 @@ impl From<crate::types::Order> for OrderDetails {
         Self {
             order_id: value.order_id,
             user_id: value.user_id,
+            account_id: value.account_id,
             symbol: value.symbol,
             price: value.price,
             quantity: value.quantity,
@@ -661,6 +680,9 @@ pub struct GetOrdersRequest {
     #[serde_as(as = "Option<StringWithSeparator::<CommaSeparator, OrderState>>")]
     #[serde(default)]
     pub order_states: Option<Vec<OrderState>>,
+    /// Optional account ID. If omitted, default (primary) user account is used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -836,6 +858,7 @@ mod tests {
             tag: None,
             clord_id: None,
             self_trade_prevention: SelfTradeBehavior::CancelIncoming,
+            account_id: None,
         };
         assert_json_snapshot!(req, @r#"
         {
@@ -862,6 +885,7 @@ mod tests {
             tag: None,
             clord_id: None,
             self_trade_prevention: SelfTradeBehavior::default(),
+            account_id: None,
         };
         assert_json_snapshot!(req, @r#"
         {
@@ -874,6 +898,58 @@ mod tests {
           "st": "CancelIncoming"
         }
         "#);
+    }
+
+    #[test]
+    fn place_order_request_with_account_id() {
+        let req = PlaceOrderRequest {
+            symbol: "EURUSD-PERP".to_string(),
+            side: Side::Buy,
+            quantity: 100,
+            price: "1.2345".parse().unwrap(),
+            time_in_force: "GTC".to_string(),
+            post_only: false,
+            tag: None,
+            clord_id: None,
+            self_trade_prevention: SelfTradeBehavior::default(),
+            account_id: Some("01KB4E-MGKR-HXEG".to_string()),
+        };
+        assert_json_snapshot!(req, @r#"
+        {
+          "s": "EURUSD-PERP",
+          "d": "B",
+          "q": 100,
+          "p": "1.2345",
+          "tif": "GTC",
+          "po": false,
+          "st": "CancelIncoming",
+          "aid": "01KB4E-MGKR-HXEG"
+        }
+        "#);
+    }
+
+    #[test]
+    fn place_order_request_account_id_omitted_deserializes_to_none() {
+        let json = r#"{"s":"TEST","d":"B","q":1,"p":"1.00","tif":"GTC","po":false}"#;
+        let req: PlaceOrderRequest = serde_json::from_str(json).expect("deser without aid");
+        assert!(req.account_id.is_none());
+    }
+
+    #[test]
+    fn order_details_account_id_round_trip() {
+        let json =
+            r#"{"oid":"ORD-1","u":"user1","aid":"01KB4E-MGKR-HXEG","s":"TEST-PERP","p":"100","#
+                .to_string()
+                + r#""q":1,"xq":0,"rq":1,"o":"A","d":"B","tif":"GTC","po":false,"ts":0,"tn":0}"#;
+        let details: OrderDetails = serde_json::from_str(&json).expect("deser with aid");
+        assert_eq!(details.account_id, "01KB4E-MGKR-HXEG");
+    }
+
+    #[test]
+    fn place_order_request_account_id_round_trip() {
+        let json = r#"{"s":"TEST","d":"B","q":1,"p":"1.00","tif":"GTC","po":false,"aid":"01KB4E-MGKR-HXEG"}"#;
+        let req: PlaceOrderRequest = serde_json::from_str(json).expect("deser with aid");
+        assert_eq!(req.account_id.as_deref(), Some("01KB4E-MGKR-HXEG"));
     }
 
     fn deser_place_order_with_stp(st_value: &str) -> PlaceOrderRequest {
@@ -1133,7 +1209,10 @@ mod tests {
     #[test]
     fn cancel_all_orders_request_serialization() {
         assert_json_snapshot!(
-            CancelAllOrdersRequest { symbol: Some("TEST-PERP".to_string()) },
+            CancelAllOrdersRequest {
+                symbol: Some("TEST-PERP".to_string()),
+                account_id: None,
+            },
             @r#"
         {
           "symbol": "TEST-PERP"
@@ -1141,7 +1220,7 @@ mod tests {
         "#
         );
         assert_json_snapshot!(
-            CancelAllOrdersRequest { symbol: None },
+            CancelAllOrdersRequest { symbol: None, account_id: None },
             @"{}"
         );
     }
@@ -1152,6 +1231,7 @@ mod tests {
             request_id: 7,
             request: OrderGatewayRequest::CancelAllOrders(CancelAllOrdersRequest {
                 symbol: Some("EURUSD-PERP".to_string()),
+                account_id: None,
             }),
         };
         assert_json_snapshot!(wrapped, @r#"
@@ -1164,7 +1244,10 @@ mod tests {
 
         let wrapped_no_symbol = ws::Request {
             request_id: 8,
-            request: OrderGatewayRequest::CancelAllOrders(CancelAllOrdersRequest { symbol: None }),
+            request: OrderGatewayRequest::CancelAllOrders(CancelAllOrdersRequest {
+                symbol: None,
+                account_id: None,
+            }),
         };
         assert_json_snapshot!(wrapped_no_symbol, @r#"
         {
@@ -1195,6 +1278,7 @@ mod tests {
                 },
             },
             order_states: Some(vec![OrderState::Filled]),
+            account_id: None,
         };
         assert_json_snapshot!(request, @r#"
         {

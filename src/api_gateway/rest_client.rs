@@ -203,6 +203,7 @@ impl ApiGatewayRestClient {
         let query = GetTransactionsQueryParams {
             request,
             timeseries: TimeseriesPagination::default(),
+            account_id: None,
         };
         self.request(reqwest::Method::GET, "transactions", Some(query), true)
             .await

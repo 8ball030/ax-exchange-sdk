@@ -171,12 +171,15 @@ pub struct PlaceOrder {
     pub tag: Option<String>,
     pub clord_id: Option<ClientOrderId>,
     pub self_trade_prevention: SelfTradeBehavior,
+    /// Optional account ID. If omitted, default (primary) user account is used.
+    pub account_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Order {
     pub order_id: OrderId,
     pub user_id: String,
+    pub account_id: String,
     pub symbol: String,
     pub side: Side,
     pub quantity: u64,

@@ -253,7 +253,7 @@ impl OrderGatewayWsClient {
         let request_id = self.next_request_id;
         self.next_request_id += 1;
         let req = protocol::order_gateway::OrderGatewayRequest::GetOpenOrders(
-            protocol::order_gateway::GetOpenOrdersRequest {},
+            protocol::order_gateway::GetOpenOrdersRequest { account_id: None },
         );
         let wrapped_req = protocol::ws::Request {
             request_id,
@@ -295,6 +295,7 @@ impl OrderGatewayWsClient {
         let req = protocol::order_gateway::OrderGatewayRequest::CancelAllOrders(
             protocol::order_gateway::CancelAllOrdersRequest {
                 symbol: symbol.map(|s| s.to_string()),
+                account_id: None,
             },
         );
         let wrapped_req = protocol::ws::Request {

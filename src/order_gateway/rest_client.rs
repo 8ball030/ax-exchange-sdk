@@ -104,7 +104,7 @@ impl OrderGatewayRestClient {
 
     /// Get all open orders
     pub async fn open_orders(&self) -> Result<Vec<Order>> {
-        let payload = GetOpenOrdersRequest {};
+        let payload = GetOpenOrdersRequest { account_id: None };
         let res: GetOpenOrdersResponse = self
             .request(reqwest::Method::GET, "open-orders", Some(payload), true)
             .await?;
@@ -157,6 +157,7 @@ impl OrderGatewayRestClient {
     pub async fn cancel_all_orders(&self, symbol: Option<&str>) -> Result<()> {
         let payload = CancelAllOrdersRequest {
             symbol: symbol.map(|s| s.to_string()),
+            account_id: None,
         };
         let _res: CancelAllOrdersResponse = self
             .request(
