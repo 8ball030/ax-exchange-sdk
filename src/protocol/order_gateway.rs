@@ -410,7 +410,7 @@ impl OrderGatewayEvent {
     pub fn symbol(&self) -> Option<&str> {
         match self {
             OrderGatewayEvent::Heartbeat(..) => None,
-            OrderGatewayEvent::CancelRejected(..) => None,
+            OrderGatewayEvent::CancelRejected(rej) => rej.order.as_ref().map(|o| o.symbol.as_str()),
             OrderGatewayEvent::OrderAcked(ack) => Some(&ack.order.symbol),
             OrderGatewayEvent::OrderCanceled(ccl) => Some(&ccl.order.symbol),
             OrderGatewayEvent::OrderReplacedOrAmended(roa) => Some(&roa.replaced_order.symbol),
@@ -436,6 +436,9 @@ pub struct CancelRejected {
     pub reject_reason: String,
     #[serde(rename = "txt")]
     pub reject_message: String,
+    // Optional for wire-compat with producers/consumers predating this field.
+    #[serde(rename = "o", default, skip_serializing_if = "Option::is_none")]
+    pub order: Option<OrderDetails>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1291,5 +1294,117 @@ mod tests {
           "order_states": "FILLED"
         }
         "#);
+    }
+
+    fn sample_order_details() -> OrderDetails {
+        OrderDetails {
+            account_id: "a".to_string(),
+            order_id: OrderId::new_unchecked("ORD-1"),
+            user_id: "u".to_string(),
+            symbol: "BTC-PERP".to_string(),
+            price: "50000".parse().unwrap(),
+            quantity: 10,
+            filled_quantity: 0,
+            remaining_quantity: 10,
+            order_state: OrderState::Accepted,
+            side: Side::Buy,
+            time_in_force: "GTC".to_string(),
+            clord_id: None,
+            tag: None,
+            post_only: false,
+            reject_reason: None,
+            reject_message: None,
+            timestamp: Timestamp {
+                ts: 1_704_067_200,
+                tn: 0,
+            },
+        }
+    }
+
+    #[test]
+    fn cancel_rejected_with_order_details_serialization() {
+        let rej = CancelRejected {
+            timestamp: Timestamp {
+                ts: 1_704_067_200,
+                tn: 0,
+            },
+            order_id: OrderId::new_unchecked("ORD-1"),
+            clord_id: None,
+            reject_reason: "rejected".to_string(),
+            reject_message: "too late to cancel".to_string(),
+            order: Some(sample_order_details()),
+        };
+        assert_json_snapshot!(rej, @r#"
+        {
+          "ts": 1704067200,
+          "tn": 0,
+          "oid": "ORD-1",
+          "r": "rejected",
+          "txt": "too late to cancel",
+          "o": {
+            "oid": "ORD-1",
+            "u": "u",
+            "aid": "a",
+            "s": "BTC-PERP",
+            "p": "50000",
+            "q": 10,
+            "xq": 0,
+            "rq": 10,
+            "o": "ACCEPTED",
+            "d": "B",
+            "tif": "GTC",
+            "po": false,
+            "ts": 1704067200,
+            "tn": 0
+          }
+        }
+        "#);
+        assert_eq!(
+            OrderGatewayEvent::CancelRejected(rej).symbol(),
+            Some("BTC-PERP")
+        );
+    }
+
+    #[test]
+    fn cancel_rejected_without_order_details_omits_field() {
+        // Wire compat: when `order` is None, the "o" key is omitted entirely so
+        // legacy consumers that don't know about it see the original payload.
+        let rej = CancelRejected {
+            timestamp: Timestamp {
+                ts: 1_704_067_200,
+                tn: 0,
+            },
+            order_id: OrderId::new_unchecked("ORD-1"),
+            clord_id: None,
+            reject_reason: "rejected".to_string(),
+            reject_message: "too late to cancel".to_string(),
+            order: None,
+        };
+        assert_json_snapshot!(rej, @r#"
+        {
+          "ts": 1704067200,
+          "tn": 0,
+          "oid": "ORD-1",
+          "r": "rejected",
+          "txt": "too late to cancel"
+        }
+        "#);
+        assert_eq!(OrderGatewayEvent::CancelRejected(rej).symbol(), None);
+    }
+
+    #[test]
+    fn cancel_rejected_legacy_wire_format_deserializes() {
+        // Wire compat: a legacy producer that doesn't emit "o" must still
+        // deserialize cleanly, leaving `order` as None.
+        let legacy = r#"{
+            "ts": 1704067200,
+            "tn": 0,
+            "oid": "ORD-1",
+            "r": "rejected",
+            "txt": "too late to cancel"
+        }"#;
+        let rej: CancelRejected = serde_json::from_str(legacy).expect("legacy deser");
+        assert_eq!(rej.order_id, OrderId::new_unchecked("ORD-1"));
+        assert!(rej.order.is_none());
     }
 }
