@@ -554,6 +554,7 @@ pub struct GetBalancesResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct Balance {
+    pub account_id: String,
     pub symbol: String,
     pub amount: Decimal,
 }

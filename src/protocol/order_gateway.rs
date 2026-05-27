@@ -659,6 +659,8 @@ impl From<crate::types::Order> for OrderDetails {
 pub struct FillDetails {
     #[serde(rename = "tid")]
     pub trade_id: String,
+    #[serde(rename = "aid")]
+    pub account_id: String,
     #[serde(rename = "s")]
     pub symbol: String,
     #[serde(rename = "q")]
