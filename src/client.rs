@@ -46,6 +46,16 @@ impl ArchitectX {
         self.order_gateway_base_url = base_url;
     }
 
+    /// Base URL for the API Gateway.
+    pub fn api_gateway_base_url(&self) -> &Url {
+        &self.api_gateway_base_url
+    }
+
+    /// Base URL for the Order Gateway.
+    pub fn order_gateway_base_url(&self) -> &Url {
+        &self.order_gateway_base_url
+    }
+
     /// Authenticate with api key and secret.
     ///
     /// This method currently exchanges the api key and secret for a

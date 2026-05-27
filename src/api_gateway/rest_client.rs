@@ -164,6 +164,11 @@ impl ApiGatewayRestClient {
             .await
     }
 
+    pub async fn leaderboard(&self, request: LeaderboardRequest) -> Result<LeaderboardResponse> {
+        self.request(reqwest::Method::GET, "leaderboard", Some(request), true)
+            .await
+    }
+
     pub async fn setup_2fa(&self) -> Result<Setup2faResponse> {
         self.request::<(), Setup2faResponse>(reqwest::Method::POST, "mfa/setup", None, true)
             .await
@@ -239,8 +244,8 @@ impl ApiGatewayRestClient {
             .await
     }
 
-    pub async fn get_fills(&self) -> Result<GetFillsResponse> {
-        self.request::<(), GetFillsResponse>(reqwest::Method::GET, "fills", None, true)
+    pub async fn get_fills(&self, request: GetFillsRequest) -> Result<GetFillsResponse> {
+        self.request(reqwest::Method::GET, "fills", Some(request), true)
             .await
     }
 

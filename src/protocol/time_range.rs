@@ -1,6 +1,7 @@
 //! Time range params and responses for API endpoints.
 
 use anyhow::{bail, Result};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr, PickFirst};
 
@@ -24,6 +25,19 @@ pub struct TimeRangeNs {
 }
 
 impl TimeRangeNs {
+    /// Build from optional `DateTime<Utc>` bounds. Any bound whose nanosecond
+    /// representation overflows `i64` (i.e. before 1677 or after 2262), or
+    /// that lies before the UNIX epoch, is dropped to `None`.
+    pub fn from_datetimes(start: Option<DateTime<Utc>>, end: Option<DateTime<Utc>>) -> Self {
+        fn to_unsigned(d: DateTime<Utc>) -> Option<u64> {
+            d.timestamp_nanos_opt().and_then(|n| u64::try_from(n).ok())
+        }
+        Self {
+            start_timestamp_ns: start.and_then(to_unsigned),
+            end_timestamp_ns: end.and_then(to_unsigned),
+        }
+    }
+
     pub fn validate(&self) -> Result<()> {
         if let (Some(start), Some(end)) = (self.start_timestamp_ns, self.end_timestamp_ns) {
             if end <= start {
@@ -66,6 +80,15 @@ mod tests {
             end_timestamp_ns: None,
         };
         ok.validate().unwrap();
+    }
+
+    #[test]
+    fn from_datetimes_drops_pre_epoch() {
+        let pre_epoch: DateTime<Utc> = "1969-12-31T23:59:59Z".parse().unwrap();
+        let post_epoch: DateTime<Utc> = "2024-01-01T00:00:00Z".parse().unwrap();
+        let r = TimeRangeNs::from_datetimes(Some(pre_epoch), Some(post_epoch));
+        assert_eq!(r.start_timestamp_ns, None);
+        assert_eq!(r.end_timestamp_ns, Some(1_704_067_200_000_000_000));
     }
 
     #[test]

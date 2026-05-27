@@ -7,7 +7,7 @@ use crate::{
     types::{ApiKeyType, BboCandle, Candle, Instrument, Token},
     Side,
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_with::{formats::CommaSeparator, serde_as, StringWithSeparator};
@@ -49,6 +49,8 @@ pub struct CreateApiKeyRequest {
     pub totp: Option<String>,
     #[serde(default)]
     pub key_type: Option<ApiKeyType>,
+    #[serde(default)]
+    pub allowed_ips: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,6 +66,7 @@ pub struct ApiKeyInfo {
     pub api_key: String,
     pub key_type: ApiKeyType,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    pub allowed_ips: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,6 +84,22 @@ pub struct RevokeApiKeyRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct RevokeApiKeyResponse {
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct UpdateApiKeyAllowedIpsRequest {
+    pub api_key: String,
+    pub password: String,
+    pub totp: Option<String>,
+    #[serde(default)]
+    pub allowed_ips: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct UpdateApiKeyAllowedIpsResponse {
     pub message: String,
 }
 
@@ -135,6 +154,7 @@ pub struct LoginRequest {
 pub struct WhoAmIResponse {
     pub id: String,
     pub username: String,
+    pub pseudonym: String,
     pub created_at: DateTime<Utc>,
     pub enabled_2fa: bool,
     pub is_onboarded: bool,
@@ -171,6 +191,108 @@ pub struct WhoAmIAccount {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct GetCustomerResponse {
     pub business_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum LeaderboardMetric {
+    Volume,
+}
+
+impl LeaderboardMetric {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Volume => "volume",
+        }
+    }
+}
+
+impl std::fmt::Display for LeaderboardMetric {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum LeaderboardCadence {
+    Monthly,
+}
+
+impl LeaderboardCadence {
+    pub fn all() -> &'static [Self] {
+        &[Self::Monthly]
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Monthly => "monthly",
+        }
+    }
+
+    pub fn period_start(&self, dt: DateTime<Utc>) -> Option<DateTime<Utc>> {
+        match self {
+            Self::Monthly => NaiveDate::from_ymd_opt(dt.year(), dt.month(), 1)
+                .and_then(|d| d.and_hms_opt(0, 0, 0))
+                .map(|dt| dt.and_utc()),
+        }
+    }
+
+    pub fn next_period_start(&self, dt: DateTime<Utc>) -> Option<DateTime<Utc>> {
+        match self {
+            Self::Monthly => {
+                let d = if dt.month() == 12 {
+                    NaiveDate::from_ymd_opt(dt.year() + 1, 1, 1)
+                } else {
+                    NaiveDate::from_ymd_opt(dt.year(), dt.month() + 1, 1)
+                };
+                d.and_then(|d| d.and_hms_opt(0, 0, 0))
+                    .map(|dt| dt.and_utc())
+            }
+        }
+    }
+
+    pub fn crossed_boundary(&self, prev: DateTime<Utc>, now: DateTime<Utc>) -> bool {
+        match self {
+            Self::Monthly => prev.month() != now.month() || prev.year() != now.year(),
+        }
+    }
+}
+
+impl std::fmt::Display for LeaderboardCadence {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
+pub struct LeaderboardRequest {
+    pub metric: LeaderboardMetric,
+    pub cadence: LeaderboardCadence,
+    pub period_offset: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct LeaderboardResponse {
+    pub metric: LeaderboardMetric,
+    pub cadence: LeaderboardCadence,
+    pub period_start: DateTime<Utc>,
+    pub period_end: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub entries: Vec<LeaderboardEntry>,
+    pub your_entry: Option<LeaderboardEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct LeaderboardEntry {
+    pub rank: u32,
+    pub pseudonym: String,
+    pub score: Decimal,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -346,6 +468,8 @@ pub struct Position {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
 pub struct GetFillsRequest {
+    /// Optional symbol filter. If provided, only fills for this symbol will be returned.
+    pub symbol: Option<String>,
     #[serde(flatten)]
     pub timeseries: TimeseriesPagination,
 }
@@ -354,6 +478,8 @@ pub struct GetFillsRequest {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct GetFillsResponse {
     pub fills: Vec<Fill>,
+    #[serde(flatten)]
+    pub page: TimeseriesPage,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -431,9 +557,23 @@ pub struct GetRiskSnapshotResponse {
     pub risk_snapshot: UserRiskSnapshot,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
+pub struct GetVolumeRequest {
+    pub start_timestamp_ns: u64,
+    pub end_timestamp_ns: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct GetVolumeResponse {
+    pub volume: Decimal,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
 
     #[test]
     fn test_get_user_token_request_serde() {
@@ -474,6 +614,72 @@ mod tests {
                 },
                 expiration_seconds: 3600,
             }
+        );
+    }
+
+    #[test]
+    fn test_monthly_period_start() {
+        let c = LeaderboardCadence::Monthly;
+        assert_eq!(
+            c.period_start(Utc.with_ymd_and_hms(2025, 7, 15, 12, 30, 0).unwrap())
+                .unwrap(),
+            Utc.with_ymd_and_hms(2025, 7, 1, 0, 0, 0).unwrap()
+        );
+        assert_eq!(
+            c.period_start(Utc.with_ymd_and_hms(2025, 1, 1, 12, 30, 0).unwrap())
+                .unwrap(),
+            Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap()
+        );
+        assert_eq!(
+            c.period_start(Utc.with_ymd_and_hms(2025, 12, 31, 12, 30, 0).unwrap())
+                .unwrap(),
+            Utc.with_ymd_and_hms(2025, 12, 1, 0, 0, 0).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_monthly_next_period_start() {
+        let c = LeaderboardCadence::Monthly;
+        let jan = Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap();
+        assert_eq!(
+            c.next_period_start(jan).unwrap(),
+            Utc.with_ymd_and_hms(2025, 2, 1, 0, 0, 0).unwrap()
+        );
+        let dec = Utc.with_ymd_and_hms(2025, 12, 1, 0, 0, 0).unwrap();
+        assert_eq!(
+            c.next_period_start(dec).unwrap(),
+            Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_monthly_crossed_boundary() {
+        let c = LeaderboardCadence::Monthly;
+        let jan_15 = Utc.with_ymd_and_hms(2025, 1, 15, 12, 30, 0).unwrap();
+        let jan_20 = Utc.with_ymd_and_hms(2025, 1, 20, 12, 30, 0).unwrap();
+        let feb_1 = Utc.with_ymd_and_hms(2025, 2, 1, 12, 30, 0).unwrap();
+        let jan_next_year = Utc.with_ymd_and_hms(2026, 1, 15, 12, 30, 0).unwrap();
+        assert!(!c.crossed_boundary(jan_15, jan_20));
+        assert!(c.crossed_boundary(jan_15, feb_1));
+        assert!(c.crossed_boundary(jan_15, jan_next_year));
+    }
+
+    #[test]
+    fn test_serde_roundtrip() {
+        let metric = LeaderboardMetric::Volume;
+        let json = serde_json::to_string(&metric).unwrap();
+        assert_eq!(json, r#""volume""#);
+        assert_eq!(
+            serde_json::from_str::<LeaderboardMetric>(&json).unwrap(),
+            metric
+        );
+
+        let cadence = LeaderboardCadence::Monthly;
+        let json = serde_json::to_string(&cadence).unwrap();
+        assert_eq!(json, r#""monthly""#);
+        assert_eq!(
+            serde_json::from_str::<LeaderboardCadence>(&json).unwrap(),
+            cadence
         );
     }
 }
