@@ -9,9 +9,12 @@ use crate::{
 use dashmap::DashMap;
 use log::info;
 use log::trace;
-use std::sync::{
-    atomic::{AtomicI32, Ordering},
-    Arc,
+use std::{
+    sync::{
+        atomic::{AtomicI32, Ordering},
+        Arc,
+    },
+    time::Duration,
 };
 use tokio::{
     sync::{
@@ -19,6 +22,7 @@ use tokio::{
         oneshot, watch, Mutex,
     },
     task::JoinHandle,
+    time::timeout,
 };
 use url::Url;
 use yawc::Frame;
@@ -36,6 +40,8 @@ impl WsSubscription for NoSubscription {
         Ok(String::new())
     }
 }
+
+const WS_TIMEOUT: u64 = 5; // seconds
 
 // ---------------------------------------------------------------------------
 // Client
@@ -180,7 +186,10 @@ impl OrderGatewayWsClient {
             self.pending_requests.remove(&request_id);
             return Err(e);
         }
-        let bytes = rx.await.map_err(|e| ClientError::Transport(Box::new(e)))?;
+        let bytes = timeout(Duration::from_secs(WS_TIMEOUT), rx)
+            .await
+            .map_err(|_| ClientError::Timeout)?
+            .map_err(|e| ClientError::Transport(Box::new(e)))?;
         // Parse via RawValue to avoid the Default bound on R imposed by #[serde(default)]
         let envelope: crate::protocol::ws::Response<Box<serde_json::value::RawValue>> =
             serde_json::from_slice(&bytes)?;
