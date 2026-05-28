@@ -1,11 +1,11 @@
 use crate::protocol::api_gateway::*;
 use crate::protocol::pagination::TimeseriesPagination;
 use crate::protocol::{ErrorResponse, HealthResponse};
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use chrono::{DateTime, Utc};
 use log::{debug, trace};
 use reqwest;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use std::time::Duration;
 use url::Url;
 

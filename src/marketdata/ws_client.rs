@@ -6,15 +6,14 @@ use crate::{
     },
     types::{trading::CandleWidth, *},
 };
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use futures::{SinkExt, StreamExt};
 use log::{debug, error, info, trace};
 use std::{collections::HashMap, sync::Arc};
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
-    connect_async,
-    tungstenite::{client::IntoClientRequest, Message},
-    MaybeTlsStream, WebSocketStream,
+    MaybeTlsStream, WebSocketStream, connect_async,
+    tungstenite::{Message, client::IntoClientRequest},
 };
 use url::Url;
 

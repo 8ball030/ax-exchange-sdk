@@ -5,7 +5,7 @@
 use super::days_of_week::DaysOfWeek;
 use super::funding_rate_schedule::FundingRateSchedule;
 use crate::{ClientOrderId, OrderId};
-use anyhow::{anyhow, bail, Error, Result};
+use anyhow::{Error, Result, anyhow, bail};
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};

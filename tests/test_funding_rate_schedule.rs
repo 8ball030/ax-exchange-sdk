@@ -1,6 +1,6 @@
+use ax_exchange_sdk::DaysOfWeek;
 use ax_exchange_sdk::funding_rate_schedule::{FundingException, FundingRateSchedule, FundingTime};
 use ax_exchange_sdk::trading::TimeOfDay;
-use ax_exchange_sdk::DaysOfWeek;
 use chrono::{DateTime, Duration, NaiveDate, Utc};
 
 fn uk_fx_schedule() -> FundingRateSchedule {
@@ -365,10 +365,10 @@ fn test_funding_times_over_full_week() {
     let mut next_times = vec![];
     for hour in 0..(7 * 24) {
         let now = start + Duration::hours(hour);
-        if let Some(next) = schedule.next_funding_time(now) {
-            if !next_times.contains(&next) {
-                next_times.push(next);
-            }
+        if let Some(next) = schedule.next_funding_time(now)
+            && !next_times.contains(&next)
+        {
+            next_times.push(next);
         }
     }
 

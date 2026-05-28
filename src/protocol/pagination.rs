@@ -7,9 +7,9 @@
 //! - Timeseries: `TimeseriesPagination` returning `TimeseriesPage`
 
 use crate::protocol::{sort::SortDirection, time_range::TimeRangeNs};
-use anyhow::{anyhow, bail, Error, Result};
+use anyhow::{Error, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
-use serde_with::{serde_as, DisplayFromStr, PickFirst};
+use serde_with::{DisplayFromStr, PickFirst, serde_as};
 use std::fmt;
 
 pub const DEFAULT_PAGE_SIZE: u32 = 100;

@@ -1,9 +1,9 @@
 //! Time range params and responses for API endpoints.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use serde_with::{serde_as, DisplayFromStr, PickFirst};
+use serde_with::{DisplayFromStr, PickFirst, serde_as};
 
 /// Time range params for API endpoints.
 ///
@@ -39,10 +39,10 @@ impl TimeRangeNs {
     }
 
     pub fn validate(&self) -> Result<()> {
-        if let (Some(start), Some(end)) = (self.start_timestamp_ns, self.end_timestamp_ns) {
-            if end <= start {
-                bail!("end_timestamp_ns must be greater than start_timestamp_ns");
-            }
+        if let (Some(start), Some(end)) = (self.start_timestamp_ns, self.end_timestamp_ns)
+            && end <= start
+        {
+            bail!("end_timestamp_ns must be greater than start_timestamp_ns");
         }
         Ok(())
     }

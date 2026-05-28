@@ -1,16 +1,16 @@
 use crate::{
+    Side,
     protocol::{
         common::{Fill, Timestamp},
         marketdata_publisher::{Ticker, Trade},
         pagination::{TimeseriesPage, TimeseriesPagination},
     },
     types::{ApiKeyType, BboCandle, Candle, Instrument, Token},
-    Side,
 };
 use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use serde_with::{formats::CommaSeparator, serde_as, StringWithSeparator};
+use serde_with::{StringWithSeparator, formats::CommaSeparator, serde_as};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,14 +1,13 @@
 use crate::protocol::{self, order_gateway::*};
 use crate::types::PlaceOrder;
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use futures::{SinkExt, StreamExt};
 use log::{debug, error, info, trace, warn};
 use std::collections::HashMap;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
-    connect_async,
-    tungstenite::{handshake::client::generate_key, http::Request, Message},
-    MaybeTlsStream, WebSocketStream,
+    MaybeTlsStream, WebSocketStream, connect_async,
+    tungstenite::{Message, handshake::client::generate_key, http::Request},
 };
 use url::Url;
 
@@ -149,7 +148,9 @@ impl OrderGatewayWsClient {
                                     error!(
                                         "decoding order gateway message as event: {e_as_event:?}"
                                     );
-                                    error!("decoding order gateway message as response: {e_as_response:?}");
+                                    error!(
+                                        "decoding order gateway message as response: {e_as_response:?}"
+                                    );
                                     continue;
                                 }
                             }

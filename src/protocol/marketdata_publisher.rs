@@ -1,7 +1,7 @@
 use crate::{
+    InstrumentState,
     protocol::common::Timestamp,
     types::trading::{BboCandle, Candle, CandleWidth},
-    InstrumentState,
 };
 use enumflags2::bitflags;
 use rust_decimal::Decimal;

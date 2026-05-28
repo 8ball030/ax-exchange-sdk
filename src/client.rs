@@ -1,7 +1,7 @@
 use crate::api_gateway::ApiGatewayRestClient;
 use crate::marketdata::MarketdataWsClient;
 use crate::order_gateway::*;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use arc_swap::ArcSwapOption;
 use arcstr::ArcStr;
 use chrono::{DateTime, Utc};

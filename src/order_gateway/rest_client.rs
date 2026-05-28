@@ -1,12 +1,12 @@
-use crate::protocol::{common::Fill, order_gateway::*, ErrorResponse, HealthResponse};
-use crate::types::trading::{Order, PlaceOrder};
 use crate::OrderId;
-use anyhow::{anyhow, bail, Result};
+use crate::protocol::{ErrorResponse, HealthResponse, common::Fill, order_gateway::*};
+use crate::types::trading::{Order, PlaceOrder};
+use anyhow::{Result, anyhow, bail};
 use chrono::{DateTime, Utc};
 use log::{debug, trace};
 use reqwest;
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use std::time::Duration;
 use url::Url;
 

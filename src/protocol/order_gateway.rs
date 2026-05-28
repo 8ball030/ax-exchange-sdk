@@ -6,11 +6,11 @@ use crate::{
     },
     types::{ClientOrderId, Order, OrderId, OrderRejectReason, OrderState, Side},
 };
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use chrono::Utc;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use serde_with::{formats::CommaSeparator, serde_as, StringWithSeparator};
+use serde_with::{StringWithSeparator, formats::CommaSeparator, serde_as};
 
 /// Query parameters for the order gateway WebSocket endpoint (`/ws`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
