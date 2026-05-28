@@ -37,4 +37,6 @@ pub enum WsClientError {
     InvalidScheme,
     #[error("Server error {code}: {message}")]
     ServerError { code: i32, message: String },
+    #[error("Request timed out")]
+    Timeout,
 }
