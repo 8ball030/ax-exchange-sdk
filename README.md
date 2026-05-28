@@ -143,13 +143,12 @@ async fn main() -> Result<()> {
 ```rust
 // examples/order_lifecycle.rs
 use anyhow::Result;
-use ax_exchange_sdk::protocol::order_gateway::OrderIdentifier;
 use ax_exchange_sdk::{
     environment::Environment,
-    protocol::order_gateway::OrderGatewayEvent,
+    protocol::order_gateway::{OrderGatewayEvent, OrderReference},
     trading::TimeInForce,
     types::{trading::Side, ws::ConnectionState, PlaceOrder},
-    ArchitectX,
+    ArchitectX, SelfTradeBehavior,
 };
 use rust_decimal::Decimal;
 use std::{env, str::FromStr};
@@ -201,6 +200,7 @@ async fn main() -> Result<()> {
         post_only: true, // ensure the order rests and doesn't take liquidity
         tag: Some("test_order".to_string()),
         clord_id: None,
+        self_trade_prevention: SelfTradeBehavior::CancelBoth,
     };
 
     let res = order_ws.place_order(place_order).await?;
@@ -210,7 +210,7 @@ async fn main() -> Result<()> {
     let order_status = client
         .order_gateway()
         .expect("Failed to get order gateway client")
-        .order_status(OrderIdentifier::OrderId(res.order_id.clone()))
+        .order_status(OrderReference::OrderId(res.order_id.clone()))
         .await;
 
     println!("Order status after placing order: {:?}", order_status);

@@ -218,7 +218,7 @@ impl OrderGatewayWsClient {
         order_id: &crate::OrderId,
     ) -> Result<CancelOrderResponse, ClientError> {
         self.send_request_await(OrderGatewayRequest::CancelOrder(CancelOrderRequest {
-            order_id: order_id.clone(),
+            order: order_id.clone().into(),
         }))
         .await
     }

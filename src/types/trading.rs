@@ -69,6 +69,10 @@ pub enum InstrumentCategory {
     Compute,
     Treasuries,
     Energy,
+    Fx,
+    Equities,
+    Metals,
+    EnergyEtfs,
 }
 
 /// Trading schedule for an instrument, containing multiple trading hour segments
@@ -173,7 +177,9 @@ pub struct PlaceOrder {
     #[serde(rename = "tag", skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
     #[serde(rename = "cid", skip_serializing_if = "Option::is_none")]
-    pub clord_id: Option<u64>,
+    pub clord_id: Option<ClientOrderId>,
+    #[serde(rename = "st")]
+    pub self_trade_prevention: SelfTradeBehavior,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -182,6 +188,8 @@ pub enum TimeInForce {
     GoodTillCanceled,
     #[serde(rename = "IOC")]
     ImmediateOrCancel,
+    #[serde(rename = "DAY")]
+    Day,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

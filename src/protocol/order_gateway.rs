@@ -6,11 +6,12 @@ use crate::{
     },
     trading::TimeInForce,
     types::{Order, OrderId, OrderRejectReason, OrderState, Side},
+    ClientOrderId,
 };
 use anyhow::{anyhow, Result};
 use chrono::Utc;
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_with::{formats::CommaSeparator, serde_as, StringWithSeparator};
 
 /// Query parameters for the order gateway WebSocket endpoint (`/ws`).
@@ -725,7 +726,7 @@ impl From<ClientOrderId> for OrderReference {
 /// `serde(flatten)` routes deserialization through serde's intermediate
 /// `Content` map, which does not coerce form-encoded strings into the
 /// numeric `u64` inside `ClientOrderId`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct GetOrderStatusRequest {
@@ -736,7 +737,39 @@ pub struct GetOrderStatusRequest {
     /// Client order ID to query; 64 bit integer.
     /// Mutually exclusive with order_id - exactly one must be provided.
     #[serde(skip_serializing_if = "Option::is_none", rename = "cid")]
-    pub client_order_id: Option<u64>,
+    pub client_order_id: Option<ClientOrderId>,
+}
+impl<'de> Deserialize<'de> for GetOrderStatusRequest {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct RawGetOrderStatusRequest {
+            #[serde(rename = "oid")]
+            order_id: Option<OrderId>,
+
+            #[serde(rename = "cid")]
+            client_order_id: Option<ClientOrderId>,
+        }
+
+        let raw = RawGetOrderStatusRequest::deserialize(deserializer)?;
+
+        match (&raw.order_id, &raw.client_order_id) {
+            (Some(_), None) | (None, Some(_)) => Ok(GetOrderStatusRequest {
+                order_id: raw.order_id,
+                client_order_id: raw.client_order_id,
+            }),
+
+            (None, None) => Err(serde::de::Error::custom(
+                "exactly one of 'oid' or 'cid' must be provided",
+            )),
+
+            (Some(_), Some(_)) => Err(serde::de::Error::custom(
+                "'oid' and 'cid' are mutually exclusive",
+            )),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -744,7 +777,7 @@ pub struct GetOrderStatusRequest {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
 pub struct OrderStatus {
     pub symbol: String,
-    pub order_id: String,
+    pub order_id: OrderId,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub clord_id: Option<ClientOrderId>,
     pub state: OrderState,
@@ -789,7 +822,7 @@ mod tests {
             side: Side::Buy,
             quantity: 100,
             price: "1.2345".parse().unwrap(),
-            time_in_force: "GTC".to_string(),
+            time_in_force: TimeInForce::GoodTillCanceled,
             post_only: false,
             tag: None,
             clord_id: None,
@@ -815,7 +848,7 @@ mod tests {
             side: Side::Buy,
             quantity: 100,
             price: "1.2345".parse().unwrap(),
-            time_in_force: "GTC".to_string(),
+            time_in_force: TimeInForce::GoodTillCanceled,
             post_only: false,
             tag: None,
             clord_id: None,
@@ -907,10 +940,12 @@ mod tests {
     #[test]
     fn order_status_request_serialization() {
         let request_with_order_id = GetOrderStatusRequest {
-            order: OrderId::new_unchecked("O-12345").into(),
+            order_id: OrderId::new_unchecked("O-12345").into(),
+            client_order_id: None,
         };
         let request_with_client_id = GetOrderStatusRequest {
-            order: ClientOrderId(42).into(),
+            client_order_id: ClientOrderId(42).into(),
+            order_id: None,
         };
 
         assert_json_snapshot!(request_with_order_id, @r#"
@@ -924,11 +959,6 @@ mod tests {
         }
         "#);
     }
-
-    #[test]
-    fn order_status_request_deserialization() {
-        let json_order_id = r#"{"oid": "O-12345"}"#;
-        let json_client_id = r#"{"cid": 42}"#;
 
     #[test]
     fn order_status_request_urlencoded_deserialization_rejects_both() {
@@ -946,10 +976,12 @@ mod tests {
     #[test]
     fn order_status_request_urlencoded_serialization() {
         let by_oid = GetOrderStatusRequest {
-            order: OrderId::new_unchecked("O-12345").into(),
+            order_id: OrderId::new_unchecked("O-12345").into(),
+            client_order_id: None,
         };
         let by_cid = GetOrderStatusRequest {
-            order: ClientOrderId(42).into(),
+            client_order_id: ClientOrderId(42).into(),
+            order_id: None,
         };
         assert_eq!(
             serde_urlencoded::to_string(&by_oid).expect("urlencode by oid"),
