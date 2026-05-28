@@ -1,18 +1,20 @@
 use crate::{
     protocol::{
         common::{Fill, Timestamp},
-        pagination::{LimitOffsetPage, LimitOffsetPagination},
+        pagination::{TimeseriesPage, TimeseriesPagination},
         ws,
     },
     trading::TimeInForce,
     types::{Order, OrderId, OrderRejectReason, OrderState, Side},
+    ClientOrderId,
 };
 use anyhow::{anyhow, Result};
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+use serde_with::{formats::CommaSeparator, serde_as, StringWithSeparator};
 
-/// Query parameters for the order gateway WebSocket endpoint (`/orders/ws`).
+/// Query parameters for the order gateway WebSocket endpoint (`/ws`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct WsQueryParams {
@@ -29,6 +31,8 @@ pub enum OrderGatewayRequest {
     CancelAllOrders(CancelAllOrdersRequest),
     #[serde(rename = "x")]
     CancelOrder(CancelOrderRequest),
+    #[serde(rename = "s")]
+    GetOrderStatus(GetOrderStatusRequest),
     #[serde(rename = "o")]
     GetOpenOrders(GetOpenOrdersRequest),
     #[serde(rename = "p")]
@@ -51,6 +55,7 @@ pub enum AdminFirehoseRequest {
 pub enum OrderGatewayRequestType {
     CancelAllOrders,
     CancelOrder,
+    GetOrderStatus,
     GetOpenOrders,
     PlaceOrder,
     ReplaceOrder,
@@ -63,6 +68,7 @@ pub enum OrderGatewayRequestType {
 pub enum OrderGatewayResponse {
     CancelAllOrdersResponse(CancelAllOrdersResponse),
     CancelOrderResponse(CancelOrderResponse),
+    GetOrderStatusResponse(GetOrderStatusResponse),
     GetOpenOrdersResponse(GetOpenOrdersResponse),
     LoginResponse(LoginResponse),
     PlaceOrderResponse(PlaceOrderResponse),
@@ -131,7 +137,8 @@ pub struct PlaceOrderRequest {
     /// Order price in USD as decimal string; e.g. "1.2345"
     #[serde(rename = "p")]
     pub price: Decimal,
-    /// Order time in force; e.g. "GTC", "IOC", "DAY"
+    /// Order time in force; e.g. "GTC", "IOC".
+    /// "DAY" is accepted but deprecated and will be removed in a future release — use "GTC" instead.
     #[serde(rename = "tif")]
     pub time_in_force: TimeInForce,
     /// Whether the order is post-only (maker-or-cancel)
@@ -142,7 +149,10 @@ pub struct PlaceOrderRequest {
     pub tag: Option<String>,
     /// Optional client order ID; 64 bit integer
     #[serde(rename = "cid", skip_serializing_if = "Option::is_none")]
-    pub clord_id: Option<u64>,
+    pub clord_id: Option<ClientOrderId>,
+    /// Self-trade prevention behavior (defaults to rejecting the incoming aggressor)
+    #[serde(rename = "st", default)]
+    pub self_trade_prevention: crate::types::SelfTradeBehavior,
 }
 
 impl PlaceOrderRequest {
@@ -181,6 +191,7 @@ impl From<crate::types::PlaceOrder> for PlaceOrderRequest {
             post_only: value.post_only,
             tag: value.tag,
             clord_id: value.clord_id,
+            self_trade_prevention: value.self_trade_prevention,
         }
     }
 }
@@ -239,9 +250,10 @@ pub struct PreviewOrderResponse {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct CancelOrderRequest {
-    /// Order ID to cancel; e.g. "ORD-1234567890"
-    #[serde(rename = "oid")]
-    pub order_id: OrderId,
+    /// Identifier of the order to cancel; either `oid` (server order id) or
+    /// `cid` (client order id).
+    #[serde(flatten)]
+    pub order: OrderReference,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -257,9 +269,10 @@ pub struct CancelOrderResponse {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct ReplaceOrderRequest {
-    /// Order ID of the order to replace; e.g. "ORD-1234567890"
-    #[serde(rename = "oid")]
-    pub order_id: OrderId,
+    /// Identifier of the order to replace; either `oid` (server order id) or
+    /// `cid` (client order id).
+    #[serde(flatten)]
+    pub order: OrderReference,
     /// New price for the replacement order (optional, inherits from original if not provided)
     #[serde(rename = "p", skip_serializing_if = "Option::is_none")]
     pub price: Option<Decimal>,
@@ -401,6 +414,8 @@ pub struct CancelRejected {
     pub timestamp: Timestamp,
     #[serde(rename = "oid")]
     pub order_id: OrderId,
+    #[serde(rename = "cid", skip_serializing_if = "Option::is_none")]
+    pub clord_id: Option<ClientOrderId>,
     #[serde(rename = "r")]
     pub reject_reason: String,
     #[serde(rename = "txt")]
@@ -548,7 +563,7 @@ pub struct OrderDetails {
     #[serde(rename = "tif")]
     pub time_in_force: TimeInForce,
     #[serde(rename = "cid", skip_serializing_if = "Option::is_none")]
-    pub clord_id: Option<u64>,
+    pub clord_id: Option<ClientOrderId>,
     #[serde(rename = "tag", skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
     #[serde(rename = "po", default)]
@@ -634,16 +649,17 @@ pub struct FillDetails {
 }
 
 /// Order history query filters
+#[serde_as]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
 pub struct GetOrdersRequest {
     pub symbol: Option<String>,
-    pub start_time: Option<DateTime<Utc>>,
-    pub end_time: Option<DateTime<Utc>>,
     #[serde(flatten)]
-    pub pagination: LimitOffsetPagination,
-    /// Optional order state filter
-    pub order_state: Option<OrderState>,
+    pub timeseries: TimeseriesPagination,
+    /// Optional comma-separated order state filter, e.g. `FILLED,CANCELED,REPLACED`
+    #[serde_as(as = "Option<StringWithSeparator::<CommaSeparator, OrderState>>")]
+    #[serde(default)]
+    pub order_states: Option<Vec<OrderState>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -651,19 +667,68 @@ pub struct GetOrdersRequest {
 pub struct GetOrdersResponse {
     pub orders: Vec<OrderDetails>,
     #[serde(flatten)]
-    pub page: LimitOffsetPage,
+    pub page: TimeseriesPage,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
-#[serde(rename_all = "snake_case")]
-pub enum OrderIdentifier {
+pub enum OrderReference {
+    #[serde(rename = "oid")]
     OrderId(OrderId),
-    ClientOrderId(u64),
+    #[serde(rename = "cid")]
+    ClientOrderId(ClientOrderId),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
+impl<'de> Deserialize<'de> for OrderReference {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Helper {
+            #[serde(default)]
+            oid: Option<OrderId>,
+            #[serde(default)]
+            cid: Option<ClientOrderId>,
+        }
+        let h = Helper::deserialize(deserializer)?;
+        match (h.oid, h.cid) {
+            (Some(oid), None) => Ok(OrderReference::OrderId(oid)),
+            (None, Some(cid)) => Ok(cid.into()),
+            (Some(_), Some(_)) => Err(serde::de::Error::custom(
+                "oid and cid are mutually exclusive; provide exactly one",
+            )),
+            (None, None) => Err(serde::de::Error::custom(
+                "exactly one of oid or cid must be provided",
+            )),
+        }
+    }
+}
+
+impl From<OrderId> for OrderReference {
+    fn from(id: OrderId) -> Self {
+        OrderReference::OrderId(id)
+    }
+}
+
+impl From<ClientOrderId> for OrderReference {
+    fn from(id: ClientOrderId) -> Self {
+        OrderReference::ClientOrderId(id)
+    }
+}
+
+/// Query an order's current status by server order ID or client order ID.
+///
+/// `Serialize` and `Deserialize` are implemented manually rather than via
+/// `#[serde(flatten)]` so that the request round-trips through both JSON
+/// (`reqwest::json`) and form-urlencoded (`reqwest::query`/`axum::Query`).
+/// `serde(flatten)` routes deserialization through serde's intermediate
+/// `Content` map, which does not coerce form-encoded strings into the
+/// numeric `u64` inside `ClientOrderId`.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct GetOrderStatusRequest {
     /// Order ID to query; e.g. "ORD-1234567890".
     /// Mutually exclusive with client_order_id - exactly one must be provided.
@@ -672,23 +737,61 @@ pub struct GetOrderStatusRequest {
     /// Client order ID to query; 64 bit integer.
     /// Mutually exclusive with order_id - exactly one must be provided.
     #[serde(skip_serializing_if = "Option::is_none", rename = "cid")]
-    pub client_order_id: Option<u64>,
+    pub client_order_id: Option<ClientOrderId>,
+}
+impl<'de> Deserialize<'de> for GetOrderStatusRequest {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct RawGetOrderStatusRequest {
+            #[serde(rename = "oid")]
+            order_id: Option<OrderId>,
+
+            #[serde(rename = "cid")]
+            client_order_id: Option<ClientOrderId>,
+        }
+
+        let raw = RawGetOrderStatusRequest::deserialize(deserializer)?;
+
+        match (&raw.order_id, &raw.client_order_id) {
+            (Some(_), None) | (None, Some(_)) => Ok(GetOrderStatusRequest {
+                order_id: raw.order_id,
+                client_order_id: raw.client_order_id,
+            }),
+
+            (None, None) => Err(serde::de::Error::custom(
+                "exactly one of 'oid' or 'cid' must be provided",
+            )),
+
+            (Some(_), Some(_)) => Err(serde::de::Error::custom(
+                "'oid' and 'cid' are mutually exclusive",
+            )),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
 pub struct OrderStatus {
     pub symbol: String,
-    pub order_id: String,
+    pub order_id: OrderId,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub clord_id: Option<u64>,
+    pub clord_id: Option<ClientOrderId>,
     pub state: OrderState,
     // TODO: should we have default values for these?
     pub filled_quantity: Option<u64>,
     pub remaining_quantity: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reject_reason: Option<OrderRejectReason>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reject_message: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
 pub struct GetOrderStatusResponse {
     pub status: OrderStatus,
@@ -709,20 +812,127 @@ pub struct GetOrderFillsResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::SelfTradeBehavior;
     use insta::assert_json_snapshot;
 
     #[test]
-    fn order_identifier_serialization() {
-        assert_json_snapshot!(
-            OrderIdentifier::OrderId(OrderId::new_unchecked("ORD-12345")), @r#"
+    fn place_order_request_with_stp() {
+        let req = PlaceOrderRequest {
+            symbol: "EURUSD-PERP".to_string(),
+            side: Side::Buy,
+            quantity: 100,
+            price: "1.2345".parse().unwrap(),
+            time_in_force: TimeInForce::GoodTillCanceled,
+            post_only: false,
+            tag: None,
+            clord_id: None,
+            self_trade_prevention: SelfTradeBehavior::CancelIncoming,
+        };
+        assert_json_snapshot!(req, @r#"
         {
-          "order_id": "ORD-12345"
+          "s": "EURUSD-PERP",
+          "d": "B",
+          "q": 100,
+          "p": "1.2345",
+          "tif": "GTC",
+          "po": false,
+          "st": "CancelIncoming"
+        }
+        "#);
+    }
+
+    #[test]
+    fn place_order_request_default_stp() {
+        let req = PlaceOrderRequest {
+            symbol: "EURUSD-PERP".to_string(),
+            side: Side::Buy,
+            quantity: 100,
+            price: "1.2345".parse().unwrap(),
+            time_in_force: TimeInForce::GoodTillCanceled,
+            post_only: false,
+            tag: None,
+            clord_id: None,
+            self_trade_prevention: SelfTradeBehavior::default(),
+        };
+        assert_json_snapshot!(req, @r#"
+        {
+          "s": "EURUSD-PERP",
+          "d": "B",
+          "q": 100,
+          "p": "1.2345",
+          "tif": "GTC",
+          "po": false,
+          "st": "CancelIncoming"
+        }
+        "#);
+    }
+
+    fn deser_place_order_with_stp(st_value: &str) -> PlaceOrderRequest {
+        let json = format!(
+            r#"{{"s":"TEST","d":"B","q":1,"p":"1.00","tif":"GTC","po":false,"st":"{st_value}"}}"#
+        );
+        serde_json::from_str(&json).unwrap_or_else(|e| panic!("failed to deser st={st_value}: {e}"))
+    }
+
+    #[test]
+    fn place_order_request_stp_alias_xi() {
+        assert_eq!(
+            deser_place_order_with_stp("xi").self_trade_prevention,
+            SelfTradeBehavior::CancelIncoming
+        );
+    }
+
+    #[test]
+    fn place_order_request_stp_alias_xr() {
+        assert_eq!(
+            deser_place_order_with_stp("xr").self_trade_prevention,
+            SelfTradeBehavior::CancelResting
+        );
+    }
+
+    #[test]
+    fn place_order_request_stp_alias_xb() {
+        assert_eq!(
+            deser_place_order_with_stp("xb").self_trade_prevention,
+            SelfTradeBehavior::CancelBoth
+        );
+    }
+
+    #[test]
+    fn place_order_request_stp_full_names() {
+        assert_eq!(
+            deser_place_order_with_stp("CancelIncoming").self_trade_prevention,
+            SelfTradeBehavior::CancelIncoming
+        );
+        assert_eq!(
+            deser_place_order_with_stp("CancelResting").self_trade_prevention,
+            SelfTradeBehavior::CancelResting
+        );
+        assert_eq!(
+            deser_place_order_with_stp("CancelBoth").self_trade_prevention,
+            SelfTradeBehavior::CancelBoth
+        );
+    }
+
+    #[test]
+    fn place_order_request_stp_omitted_defaults() {
+        let json = r#"{"s":"TEST","d":"B","q":1,"p":"1.00","tif":"GTC","po":false}"#;
+        let req: PlaceOrderRequest = serde_json::from_str(json).expect("deser without st");
+        assert_eq!(req.self_trade_prevention, SelfTradeBehavior::CancelIncoming);
+    }
+
+    #[test]
+    fn order_reference_serialization() {
+        assert_json_snapshot!(
+            OrderReference::from(OrderId::new_unchecked("ORD-12345")), @r#"
+        {
+          "oid": "ORD-12345"
         }
         "#
         );
-        assert_json_snapshot!(OrderIdentifier::ClientOrderId(42), @r#"
+        assert_json_snapshot!(OrderReference::from(ClientOrderId(42)), @r#"
         {
-          "client_order_id": 42
+          "cid": 42
         }
         "#);
     }
@@ -730,12 +940,12 @@ mod tests {
     #[test]
     fn order_status_request_serialization() {
         let request_with_order_id = GetOrderStatusRequest {
-            order_id: Some(OrderId::new_unchecked("O-12345")),
+            order_id: OrderId::new_unchecked("O-12345").into(),
             client_order_id: None,
         };
         let request_with_client_id = GetOrderStatusRequest {
+            client_order_id: ClientOrderId(42).into(),
             order_id: None,
-            client_order_id: Some(42),
         };
 
         assert_json_snapshot!(request_with_order_id, @r#"
@@ -751,20 +961,51 @@ mod tests {
     }
 
     #[test]
-    fn order_status_request_deserialization() {
-        let json_order_id = r#"{"oid": "O-12345"}"#;
-        let json_client_id = r#"{"cid": 42}"#;
+    fn order_status_request_urlencoded_deserialization_rejects_both() {
+        let res: Result<GetOrderStatusRequest, _> =
+            serde_urlencoded::from_str("oid=O-12345&cid=42");
+        assert!(res.is_err());
+    }
 
-        let parsed: GetOrderStatusRequest =
-            serde_json::from_str(json_order_id).expect("parse with order_id");
+    #[test]
+    fn order_status_request_urlencoded_deserialization_rejects_neither() {
+        let res: Result<GetOrderStatusRequest, _> = serde_urlencoded::from_str("");
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn order_status_request_urlencoded_serialization() {
+        let by_oid = GetOrderStatusRequest {
+            order_id: OrderId::new_unchecked("O-12345").into(),
+            client_order_id: None,
+        };
+        let by_cid = GetOrderStatusRequest {
+            client_order_id: ClientOrderId(42).into(),
+            order_id: None,
+        };
+        assert_eq!(
+            serde_urlencoded::to_string(&by_oid).expect("urlencode by oid"),
+            "oid=O-12345",
+        );
+        assert_eq!(
+            serde_urlencoded::to_string(&by_cid).expect("urlencode by cid"),
+            "cid=42",
+        );
+    }
+
+    #[test]
+    fn order_status_request_deserialization() {
+        let json_oid = r#"{"oid": "O-12345"}"#;
+        let json_cid = r#"{"cid": 42}"#;
+
+        let parsed: GetOrderStatusRequest = serde_json::from_str(json_oid).expect("parse with oid");
         assert_json_snapshot!(parsed, @r#"
         {
           "oid": "O-12345"
         }
         "#);
 
-        let parsed: GetOrderStatusRequest =
-            serde_json::from_str(json_client_id).expect("parse with client_order_id");
+        let parsed: GetOrderStatusRequest = serde_json::from_str(json_cid).expect("parse with cid");
         assert_json_snapshot!(parsed, @r#"
         {
           "cid": 42
@@ -818,24 +1059,35 @@ mod tests {
 
     #[test]
     fn test_get_orders_request_serialization() {
+        use crate::protocol::{
+            pagination::CursorPagination, sort::SortDirection, time_range::TimeRangeNs,
+        };
+        // 2024-01-01T00:00:00Z = 1_704_067_200_000_000_000
+        // 2024-01-31T23:59:59Z = 1_706_745_599_000_000_000
         let request = GetOrdersRequest {
             symbol: Some("BTCUSD-PERP".to_string()),
-            start_time: Some("2024-01-01T00:00:00Z".parse().unwrap()),
-            end_time: Some("2024-01-31T23:59:59Z".parse().unwrap()),
-            pagination: LimitOffsetPagination {
-                limit: Some(100),
-                offset: Some(0),
+            timeseries: TimeseriesPagination {
+                range: TimeRangeNs::from_datetimes(
+                    Some("2024-01-01T00:00:00Z".parse().unwrap()),
+                    Some("2024-01-31T23:59:59Z".parse().unwrap()),
+                ),
+                sort_ts: Some(SortDirection::Desc),
+                pagination: CursorPagination {
+                    limit: Some(100),
+                    cursor: Some("1704067200000000000:ORD-1".to_string()),
+                },
             },
-            order_state: Some(OrderState::Filled),
+            order_states: Some(vec![OrderState::Filled]),
         };
         assert_json_snapshot!(request, @r#"
         {
           "symbol": "BTCUSD-PERP",
-          "start_time": "2024-01-01T00:00:00Z",
-          "end_time": "2024-01-31T23:59:59Z",
+          "start_timestamp_ns": 1704067200000000000,
+          "end_timestamp_ns": 1706745599000000000,
+          "sort_ts": "desc",
           "limit": 100,
-          "offset": 0,
-          "order_state": "FILLED"
+          "cursor": "1704067200000000000:ORD-1",
+          "order_states": "FILLED"
         }
         "#);
     }

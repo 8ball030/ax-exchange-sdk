@@ -116,15 +116,15 @@ impl OrderGatewayRestClient {
         Ok(orders)
     }
 
-    pub async fn order_status(&self, order: OrderIdentifier) -> Result<OrderStatus> {
+    pub async fn order_status(&self, order: OrderReference) -> Result<OrderStatus> {
         let payload = match order {
-            OrderIdentifier::OrderId(order_id) => GetOrderStatusRequest {
-                order_id: Some(order_id),
+            OrderReference::OrderId(oid) => GetOrderStatusRequest {
+                order_id: oid.into(),
                 client_order_id: None,
             },
-            OrderIdentifier::ClientOrderId(client_order_id) => GetOrderStatusRequest {
+            OrderReference::ClientOrderId(cid) => GetOrderStatusRequest {
+                client_order_id: Some(cid),
                 order_id: None,
-                client_order_id: Some(client_order_id),
             },
         };
         let res: GetOrderStatusResponse = self
@@ -142,10 +142,11 @@ impl OrderGatewayRestClient {
         Ok(res.order_id)
     }
 
-    /// Cancel an existing order
-    pub async fn cancel_order(&self, order_id: &OrderId) -> Result<bool> {
+    /// Cancel an existing order identified by either `OrderId` or
+    /// `ClientOrderId`.
+    pub async fn cancel_order(&self, order: impl Into<OrderReference>) -> Result<bool> {
         let payload = CancelOrderRequest {
-            order_id: order_id.clone(),
+            order: order.into(),
         };
         let res: CancelOrderResponse = self
             .request(reqwest::Method::POST, "cancel-order", Some(payload), true)

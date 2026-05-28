@@ -4,12 +4,13 @@
 
 use super::days_of_week::DaysOfWeek;
 use super::funding_rate_schedule::FundingRateSchedule;
-use crate::OrderId;
+use crate::{ClientOrderId, OrderId};
 use anyhow::{anyhow, bail, Error, Result};
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
+use std::collections::HashMap;
 use strum::VariantArray;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,6 +55,8 @@ pub struct Instrument {
     pub funding_schedule_calendar_description: Option<String>,
     pub funding_schedule: Option<FundingRateSchedule>,
     pub trading_schedule: Option<TradingSchedule>,
+    #[cfg_attr(feature = "utoipa", schema(value_type = Object))]
+    pub additional_product_specs: Option<HashMap<String, String>>,
 }
 
 #[derive(
@@ -63,13 +66,13 @@ pub struct Instrument {
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum InstrumentCategory {
+    Compute,
+    Treasuries,
+    Energy,
     Fx,
     Equities,
     Metals,
     EnergyEtfs,
-    Compute,
-    Treasuries,
-    Energy,
 }
 
 /// Trading schedule for an instrument, containing multiple trading hour segments
@@ -174,7 +177,9 @@ pub struct PlaceOrder {
     #[serde(rename = "tag", skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
     #[serde(rename = "cid", skip_serializing_if = "Option::is_none")]
-    pub clord_id: Option<u64>,
+    pub clord_id: Option<ClientOrderId>,
+    #[serde(rename = "st")]
+    pub self_trade_prevention: SelfTradeBehavior,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -183,6 +188,8 @@ pub enum TimeInForce {
     GoodTillCanceled,
     #[serde(rename = "IOC")]
     ImmediateOrCancel,
+    #[serde(rename = "DAY")]
+    Day,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -195,7 +202,7 @@ pub struct Order {
     pub price: Decimal,
     pub time_in_force: TimeInForce,
     pub tag: Option<String>,
-    pub clord_id: Option<u64>,
+    pub clord_id: Option<ClientOrderId>,
     #[serde(default)]
     pub post_only: bool,
     /// Timestamp when the order was received by the order gateway
@@ -216,6 +223,24 @@ impl Order {
     pub fn is_liquidation(&self) -> bool {
         self.order_id.is_liquidation()
     }
+}
+
+#[derive(
+    Debug, Default, derive_more::Display, Clone, Copy, PartialEq, Eq, Serialize, Deserialize,
+)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub enum SelfTradeBehavior {
+    /// Cancel the incoming aggressor order; resting orders remain on the book.
+    #[default]
+    #[serde(alias = "xi")]
+    CancelIncoming,
+    /// Cancel resting orders that would self-match; allow the aggressor.
+    #[serde(alias = "xr")]
+    CancelResting,
+    /// Cancel both resting orders and the incoming aggressor.
+    #[serde(alias = "xb")]
+    CancelBoth,
 }
 
 #[derive(Debug, derive_more::Display, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -453,9 +478,33 @@ pub enum OrderRejectReason {
     InsufficientCreditLimit,
     /// Original order was canceled or filled while a cancel-replace was pending
     OriginalOrderTerminated,
+    /// Client order ID is already in use by another open order
+    DuplicateClientOrderId,
     /// Unknown or unrecognized reject reason
     #[serde(other)]
     Unknown,
+}
+
+impl OrderRejectReason {
+    /// Human-readable description of the reject reason.
+    pub fn message(&self) -> &'static str {
+        match self {
+            Self::CloseOnly => "account is in close-only mode",
+            Self::InsufficientMargin => "insufficient margin for order",
+            Self::MaxOpenOrdersExceeded => "too many open orders on this account",
+            Self::UnknownSymbol => "symbol not found",
+            Self::ExchangeClosed => "exchange is closed",
+            Self::IncorrectQuantity => "order quantity is invalid",
+            Self::InvalidPriceIncrement => "price uses more precision than the minimum tick size",
+            Self::IncorrectOrderType => "order type is not allowed for this instrument",
+            Self::PriceOutOfBounds => "price is outside the allowed band",
+            Self::NoLiquidity => "no liquidity available to fill this order",
+            Self::InsufficientCreditLimit => "insufficient buying power",
+            Self::OriginalOrderTerminated => "original order is no longer active",
+            Self::DuplicateClientOrderId => "duplicate client order ID",
+            Self::Unknown => "order rejected",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1080,6 +1129,7 @@ mod tests {
                     expire_all_orders: false,
                 }],
             }),
+            additional_product_specs: None,
         };
 
         insta::assert_json_snapshot!(instrument, @r#"
@@ -1128,7 +1178,8 @@ mod tests {
                 "expire_all_orders": false
               }
             ]
-          }
+          },
+          "additional_product_specs": null
         }
         "#);
 

@@ -3,6 +3,7 @@
 //! This module contains all type definitions organized into logical submodules.
 
 pub mod auth;
+pub mod client_order_id;
 pub mod days_of_week;
 pub mod environment;
 pub mod funding_rate_schedule;
@@ -15,6 +16,7 @@ pub mod ws;
 
 // Re-export commonly used types for convenience
 pub use auth::{ApiKey, ApiKeyType, Password, Token, Username};
+pub use client_order_id::ClientOrderId;
 pub use days_of_week::DaysOfWeek;
 pub use funding_rate_schedule::{FundingException, FundingRateSchedule, FundingTime};
 pub use order_id::OrderId;
@@ -24,6 +26,7 @@ pub use tag::Tag;
 pub use trading::{
     Balance, BboCandle, Candle, DepositRecord, FundingHistory, Instrument, InstrumentState,
     InstrumentV0, OpenInterest, OpenInterestData, Order, OrderRejectReason, OrderState, PlaceOrder,
-    Position, Side, TimeOfDay, TradingHoursSegment, TradingSchedule, WithdrawalRecord,
+    Position, SelfTradeBehavior, Side, TimeOfDay, TradingHoursSegment, TradingSchedule,
+    WithdrawalRecord,
 };
 pub use ws::{ConnectionState, InternalCommand, TokenRefreshFn, WsClientError};

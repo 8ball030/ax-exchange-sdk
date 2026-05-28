@@ -263,7 +263,7 @@ Order endpoints are under `/orders/`.
 | `d` | string | yes | Side: `"B"` (buy) or `"S"` (sell) |
 | `q` | uint64 | yes | Quantity in contracts |
 | `p` | string | yes | Price as decimal string |
-| `tif` | string | yes | Time in force: `"GTC"`, `"IOC"`, `"DAY"` |
+| `tif` | string | yes | Time in force: `"GTC"`, `"IOC"` |
 | `po` | bool | yes | Post-only flag |
 | `tag` | string | no | Max 10 alphanumeric chars |
 | `cid` | uint64 | no | Client order ID for correlation |
