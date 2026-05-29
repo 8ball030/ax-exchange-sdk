@@ -8,7 +8,6 @@ pub mod days_of_week;
 pub mod funding_rate_schedule;
 pub mod order_id;
 pub mod orderbook;
-pub mod rfq;
 pub mod symbol;
 pub mod tag;
 pub mod trading;
@@ -20,7 +19,6 @@ pub use days_of_week::DaysOfWeek;
 pub use funding_rate_schedule::{FundingException, FundingRateSchedule, FundingTime};
 pub use order_id::OrderId;
 pub use orderbook::{Orderbook, OrderbookLevel};
-pub use rfq::{QuoteId, RequestId, RfqQuote, RfqQuoteSides, RfqQuoteState, RfqRequestState};
 pub use symbol::Symbol;
 pub use tag::Tag;
 pub use trading::{

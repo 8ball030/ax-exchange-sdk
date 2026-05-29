@@ -7,7 +7,6 @@ pub mod common;
 pub mod marketdata_publisher;
 pub mod order_gateway;
 pub mod pagination;
-pub mod rfq;
 pub mod settlement_engine;
 pub mod sort;
 pub mod time_range;
