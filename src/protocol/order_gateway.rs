@@ -19,6 +19,14 @@ pub struct WsQueryParams {
     /// When true, all orders placed on this connection will be cancelled on disconnect.
     #[serde(default)]
     pub cancel_on_disconnect: bool,
+    /// When set, the maximum number of seconds the connection may go without a heartbeat from
+    /// the client before the server closes it, triggering cancel-on-disconnect if also enabled.
+    /// The client should send a heartbeat message (`{"t":"h"}`) comfortably more often than this
+    /// so normal timing jitter never trips the timeout. This lets a client detect and recover
+    /// from a hard network drop (where no TCP close is delivered) far faster than the operating
+    /// system's TCP timeout. Leave unset to disable.
+    #[serde(default)]
+    pub client_heartbeat_timeout: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,6 +45,11 @@ pub enum OrderGatewayRequest {
     PlaceOrder(PlaceOrderRequest),
     #[serde(rename = "r")]
     ReplaceOrder(ReplaceOrderRequest),
+    /// Client-to-server liveness heartbeat. Sent by clients that connected with
+    /// `client_heartbeat_timeout` to prove the session is still alive. Fire-and-forget; the
+    /// server sends no response.
+    #[serde(rename = "h")]
+    Heartbeat,
 }
 
 /// Request types for the admin firehose websocket endpoint (/admin/ws)
@@ -100,6 +113,11 @@ pub struct LoginResponse {
     /// Whether cancel-on-disconnect is active for this session.
     #[serde(rename = "cod", default)]
     pub cancel_on_disconnect: bool,
+    /// The client heartbeat timeout (in seconds) the server accepted for this session — the
+    /// maximum silence before the connection is dropped — echoing back the `client_heartbeat_timeout`
+    /// query parameter when one was requested.
+    #[serde(rename = "chb", default, skip_serializing_if = "Option::is_none")]
+    pub client_heartbeat_timeout: Option<u32>,
 }
 
 impl LoginResponse {
