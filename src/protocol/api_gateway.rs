@@ -378,6 +378,14 @@ pub struct GetTransactionsResponse {
     pub page: TimeseriesPage,
 }
 
+/// A cash leg booked against a position-bearing account by a settlement
+/// event. Covers perpetual funding-rate payments, daily mark-to-market on
+/// any position-bearing contract, and the one-time final settlement at a
+/// dated contract's expiration — discriminated by `transaction_type`.
+///
+/// `funding_rate`, `funding_amount`, and `benchmark_price` are populated
+/// only for `Funding` and absent for the other kinds. `settlement_price`
+/// and `amount` apply to every kind.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct FundingTransaction {
@@ -385,16 +393,44 @@ pub struct FundingTransaction {
     pub account_id: String,
     pub currency: String,
     pub timestamp: DateTime<Utc>,
-    pub transaction_type: String,
+    pub transaction_type: SettlementKind,
     pub amount: Decimal,
     pub event_id: String,
     pub sequence_number: i32,
     pub reference_id: Option<String>,
     pub symbol: String,
-    pub funding_rate: Decimal,
-    pub funding_amount: Decimal,
-    pub benchmark_price: Decimal,
+    #[serde(default)]
+    pub funding_rate: Option<Decimal>,
+    /// Per-contract funding cash for this event — same for every user on
+    /// the same `(symbol, timestamp)`. Multiply by signed position to
+    /// reconstruct the per-user `amount`. (`amount` is the actual cash
+    /// booked to *this* account; `funding_amount` is the per-contract
+    /// quantity that drove the calculation.)
+    #[serde(default)]
+    pub funding_amount: Option<Decimal>,
+    #[serde(default)]
+    pub benchmark_price: Option<Decimal>,
     pub settlement_price: Decimal,
+}
+
+/// Discriminator for `FundingTransaction`. All variants are a cash leg
+/// booked at a settlement price against a position; only the trigger
+/// differs.
+#[derive(
+    Copy, Clone, Debug, Eq, PartialEq, strum::Display, strum::EnumString, Serialize, Deserialize,
+)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum SettlementKind {
+    /// Perpetual funding-rate payment. `funding_rate`, `funding_amount`,
+    /// and `benchmark_price` are populated.
+    Funding,
+    /// Routine daily mark-to-market against the daily settlement price.
+    /// Applies to perpetual and dated contracts alike.
+    MarkToMarket,
+    /// One-time final settlement at the expiration of a dated contract.
+    FinalSettlement,
 }
 
 /// Query parameters for `GET /funding-transactions` (session-authenticated user),

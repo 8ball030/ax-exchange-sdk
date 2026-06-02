@@ -30,6 +30,10 @@ pub struct InstrumentV0 {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct Instrument {
     pub symbol: String,
+    /// Absolute expiration time for dated contracts. `None` for perpetuals.
+    /// Presence of a value is the discriminator between dated and perpetual contracts.
+    #[serde(default)]
+    pub expiration: Option<DateTime<Utc>>,
     // Programmatic specification fields
     pub multiplier: Decimal,
     pub price_scale: i64,
@@ -1092,6 +1096,7 @@ mod tests {
     fn test_instrument_with_trading_schedule_serde_roundtrip() {
         let instrument = Instrument {
             symbol: "TEST-PERP".to_string(),
+            expiration: None,
             multiplier: rust_decimal::Decimal::ONE,
             price_scale: 10000,
             minimum_order_size: rust_decimal::Decimal::ONE,
@@ -1134,6 +1139,7 @@ mod tests {
         insta::assert_json_snapshot!(instrument, @r#"
         {
           "symbol": "TEST-PERP",
+          "expiration": null,
           "multiplier": "1",
           "price_scale": 10000,
           "minimum_order_size": "1",
