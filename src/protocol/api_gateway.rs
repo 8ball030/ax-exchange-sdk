@@ -872,6 +872,37 @@ pub struct FundingRate {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
+pub struct GetEstimatedFundingRateRequest {
+    pub symbol: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub enum EstimatedFundingRateStatus {
+    Ready,
+    SettlementPending,
+    Unavailable,
+}
+
+/// Live estimated funding rate for a symbol, served verbatim from the cached
+/// estimate the settlement runner publishes.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct GetEstimatedFundingRateResponse {
+    pub symbol: String,
+    pub status: EstimatedFundingRateStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    pub funding_rate: Option<Decimal>,
+    pub funding_amount: Option<Decimal>,
+    pub benchmark_price: Option<Decimal>,
+    pub settlement_price: Option<Decimal>,
+    pub timestamp: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
 pub struct GetAccountEquityHistoryRequest {
     /// Optional account ID. If omitted, default (primary) user account is used.
     pub account_id: Option<String>,

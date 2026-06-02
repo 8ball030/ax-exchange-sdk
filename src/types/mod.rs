@@ -5,7 +5,6 @@
 pub mod auth;
 pub mod client_order_id;
 pub mod days_of_week;
-pub mod funding_rate_estimate;
 pub mod funding_rate_schedule;
 pub mod order_id;
 pub mod orderbook;
@@ -17,7 +16,6 @@ pub mod trading;
 pub use auth::{ApiKey, ApiKeyType, Password, Token, Username};
 pub use client_order_id::ClientOrderId;
 pub use days_of_week::DaysOfWeek;
-pub use funding_rate_estimate::{FundingRateEstimate, FundingRateEstimateStatus};
 pub use funding_rate_schedule::{FundingException, FundingRateSchedule, FundingTime};
 pub use order_id::OrderId;
 pub use orderbook::{Orderbook, OrderbookLevel};
