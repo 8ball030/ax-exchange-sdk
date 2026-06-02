@@ -1,5 +1,6 @@
 use crate::{
     protocol::{
+        api_gateway::{GetEstimatedFundingRateRequest, GetEstimatedFundingRateResponse},
         common::{Fill, Timestamp},
         pagination::{TimeseriesPage, TimeseriesPagination},
         ws,
@@ -41,6 +42,8 @@ pub enum OrderGatewayRequest {
     GetOrderStatus(GetOrderStatusRequest),
     #[serde(rename = "o")]
     GetOpenOrders(GetOpenOrdersRequest),
+    #[serde(rename = "ef")]
+    GetEstimatedFundingRate(GetEstimatedFundingRateRequest),
     #[serde(rename = "p")]
     PlaceOrder(PlaceOrderRequest),
     #[serde(rename = "r")]
@@ -68,6 +71,7 @@ pub enum OrderGatewayRequestType {
     CancelOrder,
     GetOrderStatus,
     GetOpenOrders,
+    GetEstimatedFundingRate,
     PlaceOrder,
     ReplaceOrder,
 }
@@ -81,6 +85,7 @@ pub enum OrderGatewayResponse {
     CancelOrderResponse(CancelOrderResponse),
     GetOrderStatusResponse(GetOrderStatusResponse),
     GetOpenOrdersResponse(GetOpenOrdersResponse),
+    GetEstimatedFundingRateResponse(GetEstimatedFundingRateResponse),
     LoginResponse(LoginResponse),
     PlaceOrderResponse(PlaceOrderResponse),
     ReplaceOrderResponse(ReplaceOrderResponse),

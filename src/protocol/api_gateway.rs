@@ -871,6 +871,7 @@ pub struct FundingRate {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
 pub struct GetEstimatedFundingRateRequest {
     pub symbol: String,
@@ -878,6 +879,7 @@ pub struct GetEstimatedFundingRateRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub enum EstimatedFundingRateStatus {
     Ready,
@@ -888,6 +890,7 @@ pub enum EstimatedFundingRateStatus {
 /// Live estimated funding rate for a symbol, served verbatim from the cached
 /// estimate the settlement runner publishes.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct GetEstimatedFundingRateResponse {
     pub symbol: String,

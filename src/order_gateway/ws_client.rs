@@ -230,6 +230,13 @@ impl OrderGatewayWsClient {
                         OrderGatewayResponse::GetOpenOrdersResponse
                     )
                 }
+                OrderGatewayRequestType::GetEstimatedFundingRate => {
+                    try_parse!(
+                        res,
+                        crate::protocol::api_gateway::GetEstimatedFundingRateResponse,
+                        OrderGatewayResponse::GetEstimatedFundingRateResponse
+                    )
+                }
             }
         } else {
             warn!("response to unknown request: {}", request_id);
@@ -269,6 +276,29 @@ impl OrderGatewayWsClient {
         self.in_flight_requests
             .insert(request_id, OrderGatewayRequestType::GetOpenOrders);
         Ok(())
+    }
+
+    pub async fn get_estimated_funding_rate(&mut self, symbol: &str) -> Result<i32> {
+        let request_id = self.next_request_id;
+        self.next_request_id += 1;
+        let req = protocol::order_gateway::OrderGatewayRequest::GetEstimatedFundingRate(
+            protocol::api_gateway::GetEstimatedFundingRateRequest {
+                symbol: symbol.to_string(),
+            },
+        );
+        let wrapped_req = protocol::ws::Request {
+            request_id,
+            request: req,
+        };
+        let payload = serde_json::to_string(&wrapped_req)?;
+        if let Some(ref callback) = self.on_send {
+            callback(&payload);
+        }
+        trace!("sending get estimated funding rate request: {payload}");
+        self.ws.send(Message::Text(payload.into())).await?;
+        self.in_flight_requests
+            .insert(request_id, OrderGatewayRequestType::GetEstimatedFundingRate);
+        Ok(request_id)
     }
 
     pub async fn place_order(&mut self, place_order: PlaceOrder) -> Result<i32> {
