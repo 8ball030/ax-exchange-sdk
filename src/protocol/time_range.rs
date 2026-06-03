@@ -5,10 +5,11 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_with::{DisplayFromStr, PickFirst, serde_as};
 
-/// Maximum time window, in nanoseconds, that a historical orders query may
-/// span. Queries to `GET /orders` must supply an explicit range no wider than
-/// this (7 days); wider or unbounded ranges are rejected with a 400.
-pub const MAX_HISTORICAL_ORDERS_WINDOW_NS: u64 = 7 * 24 * 60 * 60 * 1_000_000_000;
+/// Maximum time window, in nanoseconds, that a historical time-series query may
+/// span. History endpoints (orders, fills, trades, transactions,
+/// funding-transactions) must supply an explicit range no wider than this
+/// (7 days); wider or unbounded ranges are rejected with a 400.
+pub const MAX_HISTORICAL_QUERY_WINDOW_NS: u64 = 7 * 24 * 60 * 60 * 1_000_000_000;
 
 /// Time range params for API endpoints.
 ///
