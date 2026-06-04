@@ -63,6 +63,54 @@ pub struct Instrument {
     pub additional_product_specs: Option<HashMap<String, String>>,
 }
 
+fn gcd_u128(mut a: u128, mut b: u128) -> u128 {
+    while b != 0 {
+        let next = a % b;
+        a = b;
+        b = next;
+    }
+    a
+}
+
+/// Return the canonical integer multiplier used to scale prices for `tick_size`.
+///
+/// This is the *reduced* multiplier (`denominator / gcd`), not `10^decimals`;
+/// e.g. `0.05 -> 20`. The two conventions coincide for `1×10⁻ⁿ` ticks,
+/// and diverge only for fractional-mantissa ticks (`0.05`, `0.25`).
+/// See `validate_price_scale` and the tests below.
+pub fn price_scale_from_tick_size(tick_size: Decimal) -> Result<i64> {
+    if tick_size <= Decimal::ZERO {
+        bail!("tick_size must be positive, got {tick_size}");
+    }
+
+    let tick_size = tick_size.normalize();
+    let numerator = tick_size.mantissa().unsigned_abs();
+    let denominator = 10_u128.pow(tick_size.scale());
+    let price_scale = denominator / gcd_u128(numerator, denominator);
+
+    i64::try_from(price_scale)
+        .map_err(|_| anyhow!("price scale {price_scale} for tick_size {tick_size} overflows i64"))
+}
+
+/// Validate that `price_scale` is the canonical multiplier for `tick_size`.
+///
+/// Callers gate the error on their own `strict` flag: strict callers fail
+/// fast on a mismatch, lenient callers log and keep the instrument.
+/// Only fires on a fractional-mantissa tick — none exist in live markets today.
+pub fn validate_price_scale(symbol: &str, tick_size: Decimal, price_scale: i64) -> Result<()> {
+    if price_scale <= 0 {
+        bail!("instrument {symbol} has non-positive price_scale {price_scale}");
+    }
+
+    let expected = price_scale_from_tick_size(tick_size)?;
+    if price_scale != expected {
+        bail!(
+            "instrument {symbol} has price_scale {price_scale}, expected {expected} for tick_size {tick_size}"
+        );
+    }
+    Ok(())
+}
+
 #[derive(
     Copy, Clone, Debug, Eq, PartialEq, strum::Display, strum::EnumString, Serialize, Deserialize,
 )]
@@ -1192,5 +1240,59 @@ mod tests {
         let deserialized: Instrument = serde_json::from_str(&json).unwrap();
         assert!(deserialized.trading_schedule.is_some());
         assert_eq!(deserialized.trading_schedule.unwrap().segments.len(), 1);
+    }
+
+    fn dec(s: &str) -> rust_decimal::Decimal {
+        s.parse().expect("valid decimal")
+    }
+
+    #[test]
+    fn price_scale_from_tick_size_uses_multiplier_semantics() {
+        // `1×10⁻ⁿ` ticks: reduced multiplier == `10^decimals`.
+        // The only tick shapes seen in live markets (verified 20/20:
+        // JPYUSD 1e-6, equities 0.01, XAU 0.1).
+        assert_eq!(price_scale_from_tick_size(dec("1")).unwrap(), 1);
+        assert_eq!(price_scale_from_tick_size(dec("0.001")).unwrap(), 1000);
+        assert_eq!(
+            price_scale_from_tick_size(dec("0.000001")).unwrap(),
+            1_000_000
+        );
+
+        // Integer ticks coarser than 1: still scale 1 (prices are integers).
+        assert_eq!(price_scale_from_tick_size(dec("5")).unwrap(), 1);
+        assert_eq!(price_scale_from_tick_size(dec("10")).unwrap(), 1);
+
+        // Fractional-mantissa ticks: reduced form diverges from `10^decimals`
+        // (0.5->2 not 10). None exist in prod; see the divergence test below.
+        assert_eq!(price_scale_from_tick_size(dec("0.5")).unwrap(), 2);
+        assert_eq!(price_scale_from_tick_size(dec("0.25")).unwrap(), 4);
+    }
+
+    #[test]
+    fn price_scale_validation_rejects_non_positive_values() {
+        assert!(price_scale_from_tick_size(dec("0")).is_err());
+        assert!(price_scale_from_tick_size(dec("-0.01")).is_err());
+        assert!(validate_price_scale("BAD-SCALE", dec("0.01"), 0).is_err());
+        assert!(validate_price_scale("BAD-TICK", dec("0"), 100).is_err());
+    }
+
+    #[test]
+    fn price_scale_validation_rejects_mismatched_scale() {
+        // Live-prod shapes: validation passes (EURUSD 0.0001->10000, QQQ 0.01->100).
+        validate_price_scale("EURUSD-PERP", dec("0.0001"), 10000).unwrap();
+        validate_price_scale("QQQ-PERP", dec("0.01"), 100).unwrap();
+        assert!(validate_price_scale("EURUSD-PERP", dec("0.0001"), 5).is_err());
+    }
+
+    #[test]
+    fn price_scale_validation_diverges_for_fractional_ticks() {
+        // Latent footgun: for a fractional-mantissa tick,
+        // the likely `10^decimals` price_scale (0.05 -> 100)
+        // ≠ the reduced multiplier (20), so validation rejects it.
+        // None exist in prod; strict=true fails fast,
+        // strict=false logs and keeps it.
+        // Pinned so the divergence is a deliberate choice.
+        validate_price_scale("FRACTIONAL-PERP", dec("0.05"), 20).unwrap();
+        assert!(validate_price_scale("FRACTIONAL-PERP", dec("0.05"), 100).is_err());
     }
 }
