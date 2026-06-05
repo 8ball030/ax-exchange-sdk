@@ -59,6 +59,12 @@ pub struct Instrument {
     pub funding_schedule_calendar_description: Option<String>,
     pub funding_schedule: Option<FundingRateSchedule>,
     pub trading_schedule: Option<TradingSchedule>,
+    /// Whether a live index feed is configured for this instrument, so an
+    /// intraday funding-rate estimate can be produced. When `false`, the
+    /// estimated-funding endpoint reports the symbol as unsupported and
+    /// clients should not surface an estimate for it.
+    #[serde(default)]
+    pub estimated_funding_supported: bool,
     #[cfg_attr(feature = "utoipa", schema(value_type = Object))]
     pub additional_product_specs: Option<HashMap<String, String>>,
 }
@@ -1181,6 +1187,7 @@ mod tests {
                     expire_all_orders: false,
                 }],
             }),
+            estimated_funding_supported: false,
             additional_product_specs: None,
         };
 
@@ -1232,6 +1239,7 @@ mod tests {
               }
             ]
           },
+          "estimated_funding_supported": false,
           "additional_product_specs": null
         }
         "#);
