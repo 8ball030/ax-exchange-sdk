@@ -28,6 +28,14 @@ pub struct WsQueryParams {
     /// system's TCP timeout. Leave unset to disable.
     #[serde(default)]
     pub client_heartbeat_timeout: Option<u32>,
+    /// Optional account ID to scope this connection's event stream to (e.g.
+    /// `?account_id=ACME-1`). The server streams events only for this account,
+    /// and only if the authenticated user is permitted to read it — requesting
+    /// an account the user cannot read is rejected. When unset, the connection
+    /// receives events for the user's default account. A multi-account view is
+    /// one connection per account, not a single connection spanning a set.
+    #[serde(default)]
+    pub account_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
