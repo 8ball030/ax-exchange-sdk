@@ -138,6 +138,7 @@ impl OrderGatewayRestClient {
     pub async fn cancel_order(&self, order: impl Into<OrderReference>) -> Result<bool> {
         let payload = CancelOrderRequest {
             order: order.into(),
+            account_id: None,
         };
         let res: CancelOrderResponse = self
             .request(reqwest::Method::POST, "cancel-order", Some(payload), true)

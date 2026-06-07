@@ -355,6 +355,7 @@ impl OrderGatewayWsClient {
         let req = protocol::order_gateway::OrderGatewayRequest::CancelOrder(
             protocol::order_gateway::CancelOrderRequest {
                 order: order.into(),
+                account_id: None,
             },
         );
         let wrapped_req = protocol::ws::Request {

@@ -294,6 +294,13 @@ pub struct CancelOrderRequest {
     /// `cid` (client order id).
     #[serde(flatten)]
     pub order: OrderReference,
+    /// Optional account ID, selecting which account's `cid` namespace the
+    /// reference resolves against. Only meaningful when the order is given by
+    /// `cid` — a `cid` is unique per account, not globally — and superfluous
+    /// when `oid` is supplied (server order ids are globally unique). If
+    /// omitted, the default (primary) account is used.
+    #[serde(rename = "aid", default, skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -325,6 +332,13 @@ pub struct ReplaceOrderRequest {
     /// Whether the replacement order is post-only (optional, inherits from original if not provided)
     #[serde(rename = "po", skip_serializing_if = "Option::is_none")]
     pub post_only: Option<bool>,
+    /// Optional account ID, selecting which account's `cid` namespace the
+    /// reference resolves against. Only meaningful when the order is given by
+    /// `cid` — a `cid` is unique per account, not globally — and superfluous
+    /// when `oid` is supplied (server order ids are globally unique). If
+    /// omitted, the default (primary) account is used.
+    #[serde(rename = "aid", default, skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -594,8 +608,12 @@ pub struct OrderFilled {
 pub struct OrderDetails {
     #[serde(rename = "oid")]
     pub order_id: OrderId,
+    /// Actor of record — the authenticated user who *placed* this order. This
+    /// is distinct from the owning `account_id`: a user may place orders on an
+    /// account they do not own (e.g. a proxy or algo acting for another party).
     #[serde(rename = "u")]
     pub user_id: String,
+    /// Owning account — whose positions, balance, and risk this order moves.
     #[serde(rename = "aid")]
     pub account_id: String,
     #[serde(rename = "s")]
@@ -1144,9 +1162,11 @@ mod tests {
     fn cancel_order_request_serialization() {
         let by_oid = CancelOrderRequest {
             order: OrderId::new_unchecked("O-12345").into(),
+            account_id: None,
         };
         let by_cid = CancelOrderRequest {
             order: ClientOrderId(42).into(),
+            account_id: Some("ACME-1".to_string()),
         };
         assert_json_snapshot!(by_oid, @r#"
         {
@@ -1155,7 +1175,8 @@ mod tests {
         "#);
         assert_json_snapshot!(by_cid, @r#"
         {
-          "cid": 42
+          "cid": 42,
+          "aid": "ACME-1"
         }
         "#);
     }
@@ -1220,6 +1241,7 @@ mod tests {
             quantity: None,
             time_in_force: None,
             post_only: None,
+            account_id: None,
         };
         let by_cid = ReplaceOrderRequest {
             order: ClientOrderId(99).into(),
@@ -1227,6 +1249,7 @@ mod tests {
             quantity: None,
             time_in_force: None,
             post_only: None,
+            account_id: Some("ACME-1".to_string()),
         };
         assert_json_snapshot!(by_oid, @r#"
         {
@@ -1237,7 +1260,8 @@ mod tests {
         assert_json_snapshot!(by_cid, @r#"
         {
           "cid": 99,
-          "p": "100.50"
+          "p": "100.50",
+          "aid": "ACME-1"
         }
         "#);
     }
