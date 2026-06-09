@@ -396,6 +396,10 @@ pub struct AdminSubscribeRequest {
     /// Subscribe to all order state changes (acks, cancels, rejects, expires, etc.)
     #[serde(rename = "o", default)]
     pub orders: bool,
+    /// Subscribe to reject events only (order rejects and cancel rejects).
+    /// When set without `orders`, only reject events are sent.
+    #[serde(rename = "r", default)]
+    pub rejects: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -897,6 +901,7 @@ pub struct GetOrderFillsResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::protocol::ws;
     use crate::types::SelfTradeBehavior;
     use insta::assert_json_snapshot;
 
@@ -1463,5 +1468,30 @@ mod tests {
         let rej: CancelRejected = serde_json::from_str(legacy).expect("legacy deser");
         assert_eq!(rej.order_id, OrderId::new_unchecked("ORD-1"));
         assert!(rej.order.is_none());
+    }
+
+    #[test]
+    fn admin_subscribe_request_rejects_wire_format() {
+        let req = AdminSubscribeRequest {
+            fills: false,
+            orders: false,
+            rejects: true,
+        };
+        assert_json_snapshot!(req, @r#"
+        {
+          "f": false,
+          "o": false,
+          "r": true
+        }
+        "#);
+    }
+
+    #[test]
+    fn admin_subscribe_request_rejects_default_false() {
+        let json = r#"{"rid":1,"t":"s","f":true,"o":false}"#;
+        let wrapped: ws::Request<AdminFirehoseRequest> =
+            serde_json::from_str(json).expect("deser without r");
+        let AdminFirehoseRequest::Subscribe(sub) = wrapped.request;
+        assert!(!sub.rejects);
     }
 }
