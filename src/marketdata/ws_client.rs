@@ -179,11 +179,26 @@ impl MarketdataWsClient {
         symbol: impl AsRef<str>,
         level: SubscriptionLevel,
     ) -> Result<()> {
+        self.subscribe_with(symbol, level, true, true).await
+    }
+
+    /// Subscribe with explicit control over trade and ticker delivery. For a
+    /// book level, `trades`/`ticker` suppress those streams (e.g. `trades:
+    /// false` for a book-only feed); they have no effect on a `TRADES` level.
+    pub async fn subscribe_with(
+        &mut self,
+        symbol: impl AsRef<str>,
+        level: SubscriptionLevel,
+        trades: bool,
+        ticker: bool,
+    ) -> Result<()> {
         let req = WsRequest {
             request_id: self.next_request_id,
             request: MarketdataRequest::Subscribe {
                 symbol: symbol.as_ref(),
                 level,
+                trades,
+                ticker,
             },
         };
         self.next_request_id += 1;
