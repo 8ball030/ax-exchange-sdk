@@ -537,7 +537,7 @@ pub struct SymbolRiskSnapshot {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct UserRiskSnapshot {
-    pub user_id: String,
+    pub user_id: Option<String>,
     pub timestamp_ns: DateTime<Utc>,
     pub per_symbol: HashMap<String, SymbolRiskSnapshot>,
     pub initial_margin_required_for_positions: Decimal,

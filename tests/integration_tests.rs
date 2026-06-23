@@ -135,3 +135,25 @@ async fn test_order_life_cycle() -> Result<()> {
         Ok(())
     })
 }
+
+// we test the endpoint for risk
+#[tokio::test]
+async fn test_user_risk_snapshot() -> Result<()> {
+    with_private_client!(client, {
+        match client.refresh_user_token(true).await {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("Failed to refresh user token: {:?}", e);
+                return Ok(());
+            }
+        }
+        let api = client.api_gateway()?;
+        let risk_snapshot = api.get_risk_snapshot().await;
+        assert!(
+            risk_snapshot.is_ok(),
+            "Failed to fetch risk snapshot: {:?}",
+            risk_snapshot.err()
+        );
+        Ok(())
+    })
+}
