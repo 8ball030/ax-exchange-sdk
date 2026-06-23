@@ -12,8 +12,8 @@ use serde::de::DeserializeOwned;
 use std::sync::Arc;
 use tokio::{
     net::TcpStream,
-    sync::{mpsc, oneshot, watch, Mutex},
-    time::{interval, sleep, Instant, MissedTickBehavior},
+    sync::{Mutex, mpsc, oneshot, watch},
+    time::{Instant, MissedTickBehavior, interval, sleep},
 };
 use yawc::{Frame, MaybeTlsStream, OpCode, Options, WebSocket};
 

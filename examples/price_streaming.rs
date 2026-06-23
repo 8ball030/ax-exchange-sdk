@@ -1,7 +1,7 @@
 use anyhow::Result;
 use ax_exchange_sdk::{
-    environment::Environment, protocol::marketdata_publisher::SubscriptionLevel,
-    types::ws::ConnectionState, ArchitectX,
+    ArchitectX, environment::Environment, protocol::marketdata_publisher::SubscriptionLevel,
+    types::ws::ConnectionState,
 };
 use std::env;
 
@@ -26,7 +26,12 @@ async fn main() -> Result<()> {
 
     for instrument in instruments.instruments {
         market_ws
-            .subscribe(instrument.0.symbol.clone(), SubscriptionLevel::Level1)
+            .subscribe(
+                instrument.0.symbol.clone(),
+                SubscriptionLevel::Level1,
+                true, // trades
+                true, // ticker
+            )
             .await?;
     }
 

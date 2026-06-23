@@ -10,7 +10,7 @@ use crate::{
         trading::CandleWidth,
         ws::{InternalCommand, TokenRefreshFn, WsClientError},
     },
-    ws_utils::{connection_supervisor, PendingRequests, WsSubscription},
+    ws_utils::{PendingRequests, WsSubscription, connection_supervisor},
 };
 use dashmap::DashMap;
 use log::info;
@@ -18,8 +18,9 @@ use log::trace;
 use std::sync::Arc;
 use tokio::{
     sync::{
+        Mutex,
         mpsc::{self, UnboundedSender},
-        oneshot, watch, Mutex,
+        oneshot, watch,
     },
     task::JoinHandle,
 };
@@ -37,6 +38,8 @@ enum Subscription {
     Level {
         symbol: String,
         level: SubscriptionLevel,
+        trades: bool,
+        ticker: bool,
     },
     Candles {
         symbol: String,
@@ -210,17 +213,23 @@ impl MarketdataWsClient {
         &mut self,
         symbol: impl AsRef<str>,
         level: SubscriptionLevel,
+        trades: bool,
+        ticker: bool,
     ) -> Result<(), ClientError> {
         let symbol = symbol.as_ref().to_string();
         let sub = Subscription::Level {
             symbol: symbol.clone(),
             level,
+            trades,
+            ticker,
         };
         self.add_subscription(sub.clone()).await;
         let result = self
             .send_request(MarketdataRequest::Subscribe {
                 symbol: &symbol,
                 level,
+                trades,
+                ticker,
             })
             .await;
         if result.is_err() {
@@ -354,11 +363,18 @@ impl MarketdataWsClient {
 impl WsSubscription for Subscription {
     fn to_request(&self, request_id: &mut i32) -> Result<String, serde_json::Error> {
         let req = match self {
-            Subscription::Level { symbol, level } => WsRequest {
+            Subscription::Level {
+                symbol,
+                level,
+                trades,
+                ticker,
+            } => WsRequest {
                 request_id: *request_id,
                 request: MarketdataRequest::Subscribe {
                     symbol: symbol.as_str(),
                     level: *level,
+                    trades: *trades,
+                    ticker: *ticker,
                 },
             },
             Subscription::Candles { symbol, width } => WsRequest {

@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 
 /// Days of week using ISO 8601 numbering (1=Monday, 7=Sunday).
@@ -80,16 +80,20 @@ mod tests {
     #[test]
     fn test_days_of_week_validation_invalid() {
         let result = DaysOfWeek::new(vec![0]);
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("invalid day of week: 0"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("invalid day of week: 0")
+        );
 
         let result = DaysOfWeek::new(vec![8]);
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("invalid day of week: 8"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("invalid day of week: 8")
+        );
 
         let result = DaysOfWeek::new(vec![1, 2, 3, 8]);
         assert!(result.is_err());

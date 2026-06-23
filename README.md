@@ -46,7 +46,7 @@ anyhow = "1"
 ```rust
 // examples/create_client.rs
 use anyhow::Result;
-use ax_exchange_sdk::{environment::Environment, ArchitectX};
+use ax_exchange_sdk::{ArchitectX, environment::Environment};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -73,8 +73,8 @@ async fn main() -> Result<()> {
 // examples/price_streaming.rs
 use anyhow::Result;
 use ax_exchange_sdk::{
-    environment::Environment, protocol::marketdata_publisher::SubscriptionLevel,
-    types::ws::ConnectionState, ArchitectX,
+    ArchitectX, environment::Environment, protocol::marketdata_publisher::SubscriptionLevel,
+    types::ws::ConnectionState,
 };
 use std::env;
 
@@ -99,7 +99,12 @@ async fn main() -> Result<()> {
 
     for instrument in instruments.instruments {
         market_ws
-            .subscribe(instrument.0.symbol.clone(), SubscriptionLevel::Level1)
+            .subscribe(
+                instrument.0.symbol.clone(),
+                SubscriptionLevel::Level1,
+                true, // trades
+                true, // ticker
+            )
             .await?;
     }
 
@@ -144,11 +149,11 @@ async fn main() -> Result<()> {
 // examples/order_lifecycle.rs
 use anyhow::Result;
 use ax_exchange_sdk::{
+    ArchitectX, SelfTradeBehavior,
     environment::Environment,
     protocol::order_gateway::{OrderGatewayEvent, OrderReference},
     trading::TimeInForce,
-    types::{trading::Side, ws::ConnectionState, PlaceOrder},
-    ArchitectX, SelfTradeBehavior,
+    types::{PlaceOrder, trading::Side, ws::ConnectionState},
 };
 use rust_decimal::Decimal;
 use std::{env, str::FromStr};
@@ -201,6 +206,7 @@ async fn main() -> Result<()> {
         tag: Some("test_order".to_string()),
         clord_id: None,
         self_trade_prevention: SelfTradeBehavior::CancelBoth,
+        account_id: None, // use default account
     };
 
     let res = order_ws.place_order(place_order).await?;

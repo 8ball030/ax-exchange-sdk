@@ -97,7 +97,7 @@ All market data REST endpoints are under `/api/`. Most require a bearer token.
 // Response
 {
   "instruments": [{
-    "symbol": "GBPUSD-PERP",
+    "symbol": "EURUSD-PERP",
     "multiplier": "10000",
     "price_scale": 5,
     "tick_size": "0.00001",
@@ -110,11 +110,11 @@ All market data REST endpoints are under `/api/`. Most require a bearer token.
 }
 ```
 
-**`GET /api/instrument?symbol=GBPUSD-PERP`** -- Single instrument details
+**`GET /api/instrument?symbol=EURUSD-PERP`** -- Single instrument details
 
 ### Order Book
 
-**`GET /api/book?symbol=GBPUSD-PERP&level=2`**
+**`GET /api/book?symbol=EURUSD-PERP&level=2`**
 
 - `level`: 2 (aggregated, default) or 3 (individual orders)
 
@@ -122,7 +122,7 @@ All market data REST endpoints are under `/api/`. Most require a bearer token.
 // Response
 {
   "book": {
-    "s": "GBPUSD-PERP",
+    "s": "EURUSD-PERP",
     "b": [{"p": "1.26450", "q": 500}],
     "a": [{"p": "1.26460", "q": 300}],
     "ts": 1709900000,
@@ -136,12 +136,12 @@ L3 levels include `"o": [100, 200, 200]` (individual order quantities).
 ### Tickers
 
 **`GET /api/tickers`** -- All tickers
-**`GET /api/ticker?symbol=GBPUSD-PERP`** -- Single ticker
+**`GET /api/ticker?symbol=EURUSD-PERP`** -- Single ticker
 
 ```json
 // Ticker fields (compact names)
 {
-  "s": "GBPUSD-PERP",   // symbol
+  "s": "EURUSD-PERP",   // symbol
   "p": "1.26455",        // last trade price (optional)
   "q": 100,              // last trade quantity
   "o": "1.26000",        // session open (optional)
@@ -157,21 +157,21 @@ L3 levels include `"o": [100, 200, 200]` (individual order quantities).
 
 ### Trades
 
-**`GET /api/trades?symbol=GBPUSD-PERP&limit=50`**
+**`GET /api/trades?symbol=EURUSD-PERP&limit=50`**
 
 - `limit`: max 100, default 10
 - Optional: `start_timestamp_ns`, `end_timestamp_ns`
 
 ### Candles
 
-**`GET /api/candles?symbol=GBPUSD-PERP&candle_width=1m&start_timestamp_ns=...&end_timestamp_ns=...`**
+**`GET /api/candles?symbol=EURUSD-PERP&candle_width=1m&start_timestamp_ns=...&end_timestamp_ns=...`**
 
 - `candle_width`: `1s`, `5s`, `1m`, `5m`, `15m`, `1h`, `1d`
 
 ```json
 {
   "candles": [{
-    "symbol": "GBPUSD-PERP",
+    "symbol": "EURUSD-PERP",
     "ts": "2026-03-09T12:00:00Z",
     "open": "1.26400", "high": "1.26500",
     "low": "1.26350", "close": "1.26450",
@@ -185,7 +185,7 @@ Also: `GET /api/candles/current`, `GET /api/candles/last` for latest candle.
 
 ### Funding Rates
 
-**`GET /api/funding-rates?symbol=GBPUSD-PERP&start_timestamp_ns=...&end_timestamp_ns=...`**
+**`GET /api/funding-rates?symbol=EURUSD-PERP&start_timestamp_ns=...&end_timestamp_ns=...`**
 
 ---
 
@@ -217,7 +217,7 @@ All require bearer token.
     "maintenance_margin_required": "10000.00",
     "maintenance_margin_available": "90000.00",
     "per_symbol": {
-      "GBPUSD-PERP": {
+      "EURUSD-PERP": {
         "signed_quantity": 1000,
         "average_price": "1.26000",
         "liquidation_price": "1.20000",
@@ -246,7 +246,7 @@ Order endpoints are under `/orders/`.
 **`POST /orders/place_order`**
 ```json
 {
-  "s": "GBPUSD-PERP",
+  "s": "EURUSD-PERP",
   "d": "B",
   "q": 100,
   "p": "1.26450",
@@ -259,7 +259,7 @@ Order endpoints are under `/orders/`.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `s` | string | yes | Symbol (e.g. "GBPUSD-PERP") |
+| `s` | string | yes | Symbol (e.g. "EURUSD-PERP") |
 | `d` | string | yes | Side: `"B"` (buy) or `"S"` (sell) |
 | `q` | uint64 | yes | Quantity in contracts |
 | `p` | string | yes | Price as decimal string |
@@ -277,12 +277,12 @@ Order endpoints are under `/orders/`.
 
 ### Cancel All Orders
 
-**`POST /orders/cancel_all_orders`**: `{ "symbol": "GBPUSD-PERP" }` (symbol is optional)
+**`POST /orders/cancel_all_orders`**: `{ "symbol": "EURUSD-PERP" }` (symbol is optional)
 
 ### Query Orders
 
 **`GET /orders/open_orders`** -- All open orders
-**`GET /orders/orders?symbol=GBPUSD-PERP&limit=50&offset=0`** -- Historical orders
+**`GET /orders/orders?symbol=EURUSD-PERP&limit=50&offset=0`** -- Historical orders
 **`GET /orders/order-status?order_id=O-...`** or `?client_order_id=12345`
 **`GET /orders/order-fills?order_id=O-...`**
 
@@ -316,7 +316,7 @@ Order endpoints are under `/orders/`.
 ### Subscribe to Book Updates
 
 ```json
-{"rid": 1, "type": "subscribe", "symbol": "GBPUSD-PERP", "level": "LEVEL_2"}
+{"rid": 1, "type": "subscribe", "symbol": "EURUSD-PERP", "level": "LEVEL_2"}
 ```
 
 Levels: `LEVEL_1` (best bid/ask only), `LEVEL_2` (aggregated price levels), `LEVEL_3` (individual orders)
@@ -324,13 +324,13 @@ Levels: `LEVEL_1` (best bid/ask only), `LEVEL_2` (aggregated price levels), `LEV
 ### Unsubscribe
 
 ```json
-{"rid": 2, "type": "unsubscribe", "symbol": "GBPUSD-PERP"}
+{"rid": 2, "type": "unsubscribe", "symbol": "EURUSD-PERP"}
 ```
 
 ### Subscribe to Candles
 
 ```json
-{"rid": 3, "type": "subscribe_candles", "symbol": "GBPUSD-PERP", "width": "1m"}
+{"rid": 3, "type": "subscribe_candles", "symbol": "EURUSD-PERP", "width": "1m"}
 ```
 
 Widths: `1s`, `5s`, `1m`, `5m`, `15m`, `1h`, `1d`
@@ -349,22 +349,22 @@ Error: `{"rid": 1, "error": {"message": "...", "code": 123}}`
 
 **Ticker** (`t="s"`):
 ```json
-{"t": "s", "s": "GBPUSD-PERP", "p": "1.26455", "q": 100, "v": 50000, "oi": 12000, "m": "1.26450", "ts": 1709900000, "tn": 0}
+{"t": "s", "s": "EURUSD-PERP", "p": "1.26455", "q": 100, "v": 50000, "oi": 12000, "m": "1.26450", "ts": 1709900000, "tn": 0}
 ```
 
 **Trade** (`t="t"`):
 ```json
-{"t": "t", "s": "GBPUSD-PERP", "p": "1.26455", "q": 50, "d": "B", "ts": 1709900000, "tn": 0}
+{"t": "t", "s": "EURUSD-PERP", "p": "1.26455", "q": 50, "d": "B", "ts": 1709900000, "tn": 0}
 ```
 
 **L1 Book Update** (`t="1"`):
 ```json
-{"t": "1", "s": "GBPUSD-PERP", "b": [{"p": "1.26450", "q": 500}], "a": [{"p": "1.26460", "q": 300}], "ts": 1709900000, "tn": 0}
+{"t": "1", "s": "EURUSD-PERP", "b": [{"p": "1.26450", "q": 500}], "a": [{"p": "1.26460", "q": 300}], "ts": 1709900000, "tn": 0}
 ```
 
 **L2 Book Update** (`t="2"`):
 ```json
-{"t": "2", "s": "GBPUSD-PERP", "b": [{"p": "1.26450", "q": 500}, {"p": "1.26440", "q": 200}], "a": [{"p": "1.26460", "q": 300}], "st": true, "ts": 1709900000, "tn": 0}
+{"t": "2", "s": "EURUSD-PERP", "b": [{"p": "1.26450", "q": 500}, {"p": "1.26440", "q": 200}], "a": [{"p": "1.26460", "q": 300}], "st": true, "ts": 1709900000, "tn": 0}
 ```
 
 `st: true` indicates a full snapshot; `st: false` is a delta update. On delta updates, a quantity of 0 means remove that price level.
@@ -373,7 +373,7 @@ Error: `{"rid": 1, "error": {"message": "...", "code": 123}}`
 
 **Candle** (`t="c"`):
 ```json
-{"t": "c", "symbol": "GBPUSD-PERP", "ts": "2026-03-09T12:00:00Z", "open": "1.264", "high": "1.265", "low": "1.263", "close": "1.264", "volume": 1500, "buy_volume": 800, "sell_volume": 700, "width": "1m"}
+{"t": "c", "symbol": "EURUSD-PERP", "ts": "2026-03-09T12:00:00Z", "open": "1.264", "high": "1.265", "low": "1.263", "close": "1.264", "volume": 1500, "buy_volume": 800, "sell_volume": 700, "width": "1m"}
 ```
 
 ### Maintaining a Local Order Book
@@ -402,7 +402,7 @@ Server sends immediately after connection:
 ### Place Order
 
 ```json
-{"rid": 1, "t": "p", "s": "GBPUSD-PERP", "d": "B", "q": 100, "p": "1.26450", "tif": "GTC", "po": false}
+{"rid": 1, "t": "p", "s": "EURUSD-PERP", "d": "B", "q": 100, "p": "1.26450", "tif": "GTC", "po": false}
 ```
 
 Response: `{"rid": 1, "res": {"oid": "O-01ARZ..."}, "err": null}`
@@ -418,7 +418,7 @@ Response: `{"rid": 2, "res": {"cxl_rx": true}, "err": null}`
 ### Cancel All Orders
 
 ```json
-{"rid": 3, "t": "X", "symbol": "GBPUSD-PERP"}
+{"rid": 3, "t": "X", "symbol": "EURUSD-PERP"}
 ```
 
 ### Get Open Orders
@@ -433,12 +433,12 @@ Response: `{"rid": 4, "res": {"orders": [...]}, "err": null}`
 
 **Order Acknowledged** (`t="n"`):
 ```json
-{"t": "n", "eid": "evt-1", "o": {"oid": "O-...", "s": "GBPUSD-PERP", "d": "B", "q": 100, "p": "1.26450", "xq": 0, "rq": 100, "o": "ACCEPTED", "tif": "GTC"}, "ts": 1709900000, "tn": 0}
+{"t": "n", "eid": "evt-1", "o": {"oid": "O-...", "s": "EURUSD-PERP", "d": "B", "q": 100, "p": "1.26450", "xq": 0, "rq": 100, "o": "ACCEPTED", "tif": "GTC"}, "ts": 1709900000, "tn": 0}
 ```
 
 **Order Partially Filled** (`t="p"`):
 ```json
-{"t": "p", "eid": "evt-2", "o": {"oid": "O-...", "o": "PARTIALLY_FILLED", "xq": 50, "rq": 50}, "xs": {"tid": "T-...", "s": "GBPUSD-PERP", "q": 50, "p": "1.26450", "d": "B", "agg": true}, "ts": 1709900000, "tn": 0}
+{"t": "p", "eid": "evt-2", "o": {"oid": "O-...", "o": "PARTIALLY_FILLED", "xq": 50, "rq": 50}, "xs": {"tid": "T-...", "s": "EURUSD-PERP", "q": 50, "p": "1.26450", "d": "B", "agg": true}, "ts": 1709900000, "tn": 0}
 ```
 
 **Order Filled** (`t="f"`): Same structure as partially filled, with state `"FILLED"`.
@@ -550,7 +550,7 @@ async fn main() -> Result<()> {
     // REST: place an order
     let og = client.order_gateway()?;
     let order_id = og.place_order(PlaceOrder {
-        symbol: "GBPUSD-PERP".into(),
+        symbol: "EURUSD-PERP".into(),
         side: ax_exchange_sdk::types::trading::Side::Buy,
         quantity: 100,
         price: "1.26450".parse()?,
@@ -562,7 +562,7 @@ async fn main() -> Result<()> {
 
     // WebSocket: stream market data
     let mut md = client.marketdata_ws().await?;
-    md.subscribe("GBPUSD-PERP", SubscriptionLevel::Level2).await?;
+    md.subscribe("EURUSD-PERP", SubscriptionLevel::Level2).await?;
     while let Some(event) = md.next().await? {
         println!("{:?}", event);
     }

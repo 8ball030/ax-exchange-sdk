@@ -1,10 +1,10 @@
 use anyhow::Result;
 use ax_exchange_sdk::{
+    ArchitectX, SelfTradeBehavior,
     environment::Environment,
     protocol::order_gateway::{OrderGatewayEvent, OrderReference},
     trading::TimeInForce,
-    types::{trading::Side, ws::ConnectionState, PlaceOrder},
-    ArchitectX, SelfTradeBehavior,
+    types::{PlaceOrder, trading::Side, ws::ConnectionState},
 };
 use rust_decimal::Decimal;
 use std::{env, str::FromStr};
@@ -57,6 +57,7 @@ async fn main() -> Result<()> {
         tag: Some("test_order".to_string()),
         clord_id: None,
         self_trade_prevention: SelfTradeBehavior::CancelBoth,
+        account_id: None, // use default account
     };
 
     let res = order_ws.place_order(place_order).await?;

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use ax_exchange_sdk::{environment::Environment, ArchitectX};
+use ax_exchange_sdk::{ArchitectX, environment::Environment};
 
 #[tokio::main]
 async fn main() -> Result<()> {

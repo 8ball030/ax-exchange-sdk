@@ -1,6 +1,6 @@
 use super::days_of_week::DaysOfWeek;
 use super::trading::TimeOfDay;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use chrono::{DateTime, Datelike, NaiveDate, TimeZone, Utc};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};

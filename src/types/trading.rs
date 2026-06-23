@@ -5,7 +5,7 @@
 use super::days_of_week::DaysOfWeek;
 use super::funding_rate_schedule::FundingRateSchedule;
 use crate::{ClientOrderId, OrderId};
-use anyhow::{anyhow, bail, Error, Result};
+use anyhow::{Error, Result, anyhow, bail};
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -30,6 +30,10 @@ pub struct InstrumentV0 {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct Instrument {
     pub symbol: String,
+    /// Absolute expiration time for dated contracts. `None` for perpetuals.
+    /// Presence of a value is the discriminator between dated and perpetual contracts.
+    #[serde(default)]
+    pub expiration: Option<DateTime<Utc>>,
     // Programmatic specification fields
     pub multiplier: Decimal,
     pub price_scale: i64,
@@ -55,8 +59,62 @@ pub struct Instrument {
     pub funding_schedule_calendar_description: Option<String>,
     pub funding_schedule: Option<FundingRateSchedule>,
     pub trading_schedule: Option<TradingSchedule>,
+    /// Whether a live index feed is configured for this instrument, so an
+    /// intraday funding-rate estimate can be produced. When `false`, the
+    /// estimated-funding endpoint reports the symbol as unsupported and
+    /// clients should not surface an estimate for it.
+    #[serde(default)]
+    pub estimated_funding_supported: bool,
     #[cfg_attr(feature = "utoipa", schema(value_type = Object))]
     pub additional_product_specs: Option<HashMap<String, String>>,
+}
+
+fn gcd_u128(mut a: u128, mut b: u128) -> u128 {
+    while b != 0 {
+        let next = a % b;
+        a = b;
+        b = next;
+    }
+    a
+}
+
+/// Return the canonical integer multiplier used to scale prices for `tick_size`.
+///
+/// This is the *reduced* multiplier (`denominator / gcd`), not `10^decimals`;
+/// e.g. `0.05 -> 20`. The two conventions coincide for `1×10⁻ⁿ` ticks,
+/// and diverge only for fractional-mantissa ticks (`0.05`, `0.25`).
+/// See `validate_price_scale` and the tests below.
+pub fn price_scale_from_tick_size(tick_size: Decimal) -> Result<i64> {
+    if tick_size <= Decimal::ZERO {
+        bail!("tick_size must be positive, got {tick_size}");
+    }
+
+    let tick_size = tick_size.normalize();
+    let numerator = tick_size.mantissa().unsigned_abs();
+    let denominator = 10_u128.pow(tick_size.scale());
+    let price_scale = denominator / gcd_u128(numerator, denominator);
+
+    i64::try_from(price_scale)
+        .map_err(|_| anyhow!("price scale {price_scale} for tick_size {tick_size} overflows i64"))
+}
+
+/// Validate that `price_scale` is the canonical multiplier for `tick_size`.
+///
+/// Callers gate the error on their own `strict` flag: strict callers fail
+/// fast on a mismatch, lenient callers log and keep the instrument.
+/// Only fires on a fractional-mantissa tick — none exist in live markets today.
+pub fn validate_price_scale(symbol: &str, tick_size: Decimal, price_scale: i64) -> Result<()> {
+    if price_scale <= 0 {
+        bail!("instrument {symbol} has non-positive price_scale {price_scale}");
+    }
+
+    let expected = price_scale_from_tick_size(tick_size)?;
+    if price_scale != expected {
+        bail!(
+            "instrument {symbol} has price_scale {price_scale}, expected {expected} for tick_size {tick_size}"
+        );
+    }
+    Ok(())
 }
 
 #[derive(
@@ -180,6 +238,8 @@ pub struct PlaceOrder {
     pub clord_id: Option<ClientOrderId>,
     #[serde(rename = "st")]
     pub self_trade_prevention: SelfTradeBehavior,
+    /// Optional account ID. If omitted, default (primary) user account is used.
+    pub account_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -196,6 +256,7 @@ pub enum TimeInForce {
 pub struct Order {
     pub order_id: OrderId,
     pub user_id: String,
+    pub account_id: String,
     pub symbol: String,
     pub side: Side,
     pub quantity: u64,
@@ -547,22 +608,37 @@ pub struct Candle {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct BboCandle {
+    /// Instrument symbol (e.g. "XAU-PERP")
     pub symbol: String,
+    /// Start timestamp of the candle interval (epoch seconds)
     #[serde(rename = "ts")]
     #[serde_as(as = "serde_with::TimestampSeconds")]
     pub timestamp: DateTime<Utc>,
+    /// Best bid price at the start of the interval
     pub bid_open: Option<Decimal>,
+    /// Highest best bid price during the interval
     pub bid_high: Option<Decimal>,
+    /// Lowest best bid price during the interval
     pub bid_low: Option<Decimal>,
+    /// Best bid price at the end of the interval
     pub bid_close: Option<Decimal>,
+    /// Best ask price at the start of the interval
     pub ask_open: Option<Decimal>,
+    /// Highest best ask price during the interval
     pub ask_high: Option<Decimal>,
+    /// Lowest best ask price during the interval
     pub ask_low: Option<Decimal>,
+    /// Best ask price at the end of the interval
     pub ask_close: Option<Decimal>,
+    /// Mid-price ((bid + ask) / 2) at the start of the interval
     pub mid_open: Option<Decimal>,
+    /// Highest mid-price during the interval
     pub mid_high: Option<Decimal>,
+    /// Lowest mid-price during the interval
     pub mid_low: Option<Decimal>,
+    /// Mid-price at the end of the interval
     pub mid_close: Option<Decimal>,
+    /// Duration of the candle interval
     pub width: CandleWidth,
 }
 
@@ -1093,6 +1169,7 @@ mod tests {
     fn test_instrument_with_trading_schedule_serde_roundtrip() {
         let instrument = Instrument {
             symbol: "TEST-PERP".to_string(),
+            expiration: None,
             multiplier: rust_decimal::Decimal::ONE,
             price_scale: 10000,
             minimum_order_size: rust_decimal::Decimal::ONE,
@@ -1129,12 +1206,14 @@ mod tests {
                     expire_all_orders: false,
                 }],
             }),
+            estimated_funding_supported: false,
             additional_product_specs: None,
         };
 
         insta::assert_json_snapshot!(instrument, @r#"
         {
           "symbol": "TEST-PERP",
+          "expiration": null,
           "multiplier": "1",
           "price_scale": 10000,
           "minimum_order_size": "1",
@@ -1179,6 +1258,7 @@ mod tests {
               }
             ]
           },
+          "estimated_funding_supported": false,
           "additional_product_specs": null
         }
         "#);
@@ -1187,5 +1267,59 @@ mod tests {
         let deserialized: Instrument = serde_json::from_str(&json).unwrap();
         assert!(deserialized.trading_schedule.is_some());
         assert_eq!(deserialized.trading_schedule.unwrap().segments.len(), 1);
+    }
+
+    fn dec(s: &str) -> rust_decimal::Decimal {
+        s.parse().expect("valid decimal")
+    }
+
+    #[test]
+    fn price_scale_from_tick_size_uses_multiplier_semantics() {
+        // `1×10⁻ⁿ` ticks: reduced multiplier == `10^decimals`.
+        // The only tick shapes seen in live markets (verified 20/20:
+        // JPYUSD 1e-6, equities 0.01, XAU 0.1).
+        assert_eq!(price_scale_from_tick_size(dec("1")).unwrap(), 1);
+        assert_eq!(price_scale_from_tick_size(dec("0.001")).unwrap(), 1000);
+        assert_eq!(
+            price_scale_from_tick_size(dec("0.000001")).unwrap(),
+            1_000_000
+        );
+
+        // Integer ticks coarser than 1: still scale 1 (prices are integers).
+        assert_eq!(price_scale_from_tick_size(dec("5")).unwrap(), 1);
+        assert_eq!(price_scale_from_tick_size(dec("10")).unwrap(), 1);
+
+        // Fractional-mantissa ticks: reduced form diverges from `10^decimals`
+        // (0.5->2 not 10). None exist in prod; see the divergence test below.
+        assert_eq!(price_scale_from_tick_size(dec("0.5")).unwrap(), 2);
+        assert_eq!(price_scale_from_tick_size(dec("0.25")).unwrap(), 4);
+    }
+
+    #[test]
+    fn price_scale_validation_rejects_non_positive_values() {
+        assert!(price_scale_from_tick_size(dec("0")).is_err());
+        assert!(price_scale_from_tick_size(dec("-0.01")).is_err());
+        assert!(validate_price_scale("BAD-SCALE", dec("0.01"), 0).is_err());
+        assert!(validate_price_scale("BAD-TICK", dec("0"), 100).is_err());
+    }
+
+    #[test]
+    fn price_scale_validation_rejects_mismatched_scale() {
+        // Live-prod shapes: validation passes (EURUSD 0.0001->10000, QQQ 0.01->100).
+        validate_price_scale("EURUSD-PERP", dec("0.0001"), 10000).unwrap();
+        validate_price_scale("QQQ-PERP", dec("0.01"), 100).unwrap();
+        assert!(validate_price_scale("EURUSD-PERP", dec("0.0001"), 5).is_err());
+    }
+
+    #[test]
+    fn price_scale_validation_diverges_for_fractional_ticks() {
+        // Latent footgun: for a fractional-mantissa tick,
+        // the likely `10^decimals` price_scale (0.05 -> 100)
+        // ≠ the reduced multiplier (20), so validation rejects it.
+        // None exist in prod; strict=true fails fast,
+        // strict=false logs and keeps it.
+        // Pinned so the divergence is a deliberate choice.
+        validate_price_scale("FRACTIONAL-PERP", dec("0.05"), 20).unwrap();
+        assert!(validate_price_scale("FRACTIONAL-PERP", dec("0.05"), 100).is_err());
     }
 }

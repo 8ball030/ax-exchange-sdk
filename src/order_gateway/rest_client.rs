@@ -1,12 +1,12 @@
-use crate::protocol::{common::Fill, order_gateway::*, ErrorResponse, HealthResponse};
-use crate::types::trading::{Order, PlaceOrder};
 use crate::OrderId;
-use anyhow::{anyhow, bail, Result};
+use crate::protocol::{ErrorResponse, HealthResponse, common::Fill, order_gateway::*};
+use crate::types::trading::{Order, PlaceOrder};
+use anyhow::{Result, anyhow, bail};
 use chrono::{DateTime, Utc};
 use log::{debug, trace};
 use reqwest;
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use std::time::Duration;
 use url::Url;
 
@@ -104,7 +104,7 @@ impl OrderGatewayRestClient {
 
     /// Get all open orders
     pub async fn open_orders(&self) -> Result<Vec<Order>> {
-        let payload = GetOpenOrdersRequest {};
+        let payload = GetOpenOrdersRequest { account_id: None };
         let res: GetOpenOrdersResponse = self
             .request(reqwest::Method::GET, "open-orders", Some(payload), true)
             .await?;
@@ -147,6 +147,7 @@ impl OrderGatewayRestClient {
     pub async fn cancel_order(&self, order: impl Into<OrderReference>) -> Result<bool> {
         let payload = CancelOrderRequest {
             order: order.into(),
+            account_id: None,
         };
         let res: CancelOrderResponse = self
             .request(reqwest::Method::POST, "cancel-order", Some(payload), true)
@@ -166,6 +167,7 @@ impl OrderGatewayRestClient {
     pub async fn cancel_all_orders(&self, symbol: Option<&str>) -> Result<()> {
         let payload = CancelAllOrdersRequest {
             symbol: symbol.map(|s| s.to_string()),
+            account_id: None,
         };
         let _res: CancelAllOrdersResponse = self
             .request(

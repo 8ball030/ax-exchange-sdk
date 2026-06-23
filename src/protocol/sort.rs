@@ -1,6 +1,6 @@
 //! Sorting params and responses for API endpoints.
 
-use anyhow::{anyhow, bail, Error, Result};
+use anyhow::{Error, Result, anyhow, bail};
 use serde::de;
 use serde::{Deserialize, Serialize};
 use std::fmt;
