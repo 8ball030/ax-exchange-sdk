@@ -1,16 +1,16 @@
 use crate::{
+    Side,
     protocol::{
         common::{Fill, Timestamp},
         marketdata_publisher::{Ticker, Trade},
         pagination::{TimeseriesPage, TimeseriesPagination},
     },
     types::{ApiKeyType, BboCandle, Candle, Instrument, Token},
-    Side,
 };
 use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use serde_with::{formats::CommaSeparator, serde_as, StringWithSeparator};
+use serde_with::{StringWithSeparator, formats::CommaSeparator, serde_as};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -174,8 +174,6 @@ pub struct WhoAmIResponse {
 pub struct WhoAmIAccount {
     pub id: String,
     pub name: String,
-    pub ep3_username: String,
-    pub ep3_account: String,
     pub is_close_only: bool,
     pub is_frozen: bool,
     pub maker_fee: Decimal,
@@ -191,6 +189,7 @@ pub struct WhoAmIAccount {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct GetCustomerResponse {
     pub business_name: Option<String>,
+    pub doing_business_as: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -350,6 +349,8 @@ pub struct GetTransactionsRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
 pub struct GetTransactionsQueryParams {
+    /// Optional account ID. If omitted, default (primary) user account is used.
+    pub account_id: Option<String>,
     #[serde(flatten)]
     pub request: GetTransactionsRequest,
     #[serde(flatten)]
@@ -360,6 +361,7 @@ pub struct GetTransactionsQueryParams {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct Transaction {
     pub user_id: String,
+    pub account_id: String,
     pub event_id: String,
     pub symbol: String,
     pub timestamp: DateTime<Utc>,
@@ -376,28 +378,84 @@ pub struct GetTransactionsResponse {
     pub page: TimeseriesPage,
 }
 
+/// A cash leg booked against a position-bearing account by a settlement
+/// event. Covers perpetual funding-rate payments, daily mark-to-market on
+/// any position-bearing contract, and the one-time final settlement at a
+/// dated contract's expiration — discriminated by `transaction_type`.
+///
+/// `funding_rate`, `funding_amount`, and `benchmark_price` are populated
+/// only for `Funding` and absent for the other kinds. `settlement_price`
+/// and `amount` apply to every kind.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct FundingTransaction {
     pub user_id: String,
+    pub account_id: String,
     pub currency: String,
     pub timestamp: DateTime<Utc>,
-    pub transaction_type: String,
+    pub transaction_type: SettlementKind,
     pub amount: Decimal,
     pub event_id: String,
     pub sequence_number: i32,
     pub reference_id: Option<String>,
     pub symbol: String,
-    pub funding_rate: Decimal,
-    pub funding_amount: Decimal,
-    pub benchmark_price: Decimal,
+    #[serde(default)]
+    pub funding_rate: Option<Decimal>,
+    /// Per-contract funding cash for this event — same for every user on
+    /// the same `(symbol, timestamp)`. Multiply by signed position to
+    /// reconstruct the per-user `amount`. (`amount` is the actual cash
+    /// booked to *this* account; `funding_amount` is the per-contract
+    /// quantity that drove the calculation.)
+    #[serde(default)]
+    pub funding_amount: Option<Decimal>,
+    #[serde(default)]
+    pub benchmark_price: Option<Decimal>,
     pub settlement_price: Decimal,
+}
+
+/// Discriminator for `FundingTransaction`. All variants are a cash leg
+/// booked at a settlement price against a position; only the trigger
+/// differs.
+#[derive(
+    Copy, Clone, Debug, Eq, PartialEq, strum::Display, strum::EnumString, Serialize, Deserialize,
+)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum SettlementKind {
+    /// Perpetual funding-rate payment. `funding_rate`, `funding_amount`,
+    /// and `benchmark_price` are populated.
+    Funding,
+    /// Routine daily mark-to-market against the daily settlement price.
+    /// Applies to perpetual and dated contracts alike.
+    MarkToMarket,
+    /// One-time final settlement at the expiration of a dated contract.
+    FinalSettlement,
+}
+
+/// Query parameters for `GET /funding-transactions` (session-authenticated user),
+/// including optional time range, sort direction, cursor, and page size.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
+pub struct GetFundingTransactionsQueryParams {
+    pub symbol: Option<String>,
+    #[serde(flatten)]
+    pub timeseries: TimeseriesPagination,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct GetFundingTransactionsResponse {
     pub funding_transactions: Vec<FundingTransaction>,
+    #[serde(flatten)]
+    pub page: TimeseriesPage,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
+pub struct GetFundingTransactionsRequest {
+    /// Optional account ID. If omitted, default (primary) user account is used.
+    pub account_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -437,6 +495,8 @@ pub struct Disable2faResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct SandboxDepositRequest {
+    /// Optional account ID. If omitted, default (primary) user account is used.
+    pub account_id: Option<String>,
     pub symbol: String,
     pub amount: Decimal,
 }
@@ -444,8 +504,17 @@ pub struct SandboxDepositRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct SandboxWithdrawalRequest {
+    /// Optional account ID. If omitted, default (primary) user account is used.
+    pub account_id: Option<String>,
     pub symbol: String,
     pub amount: Decimal,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
+pub struct GetPositionsRequest {
+    /// Optional account ID. If omitted, default (primary) user account is used.
+    pub account_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -458,6 +527,7 @@ pub struct GetPositionsResponse {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct Position {
     pub user_id: String,
+    pub account_id: String,
     pub symbol: String,
     pub signed_quantity: i64,
     pub signed_notional: Decimal,
@@ -468,6 +538,8 @@ pub struct Position {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
 pub struct GetFillsRequest {
+    /// Optional account ID. If omitted, default (primary) user account is used.
+    pub account_id: Option<String>,
     /// Optional symbol filter. If provided, only fills for this symbol will be returned.
     pub symbol: Option<String>,
     #[serde(flatten)]
@@ -492,6 +564,8 @@ pub struct AdminTrade {
     pub quantity: u64,
     pub maker_user_id: String,
     pub taker_user_id: String,
+    pub maker_account_id: String,
+    pub taker_account_id: String,
     pub taker_side: Side,
     pub maker_fee: Decimal,
     pub taker_fee: Decimal,
@@ -516,6 +590,7 @@ pub struct GetBalancesResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct Balance {
+    pub account_id: String,
     pub symbol: String,
     pub amount: Decimal,
 }
@@ -538,6 +613,7 @@ pub struct SymbolRiskSnapshot {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct UserRiskSnapshot {
     pub user_id: Option<String>,
+    pub account_id: String,
     pub timestamp_ns: DateTime<Utc>,
     pub per_symbol: HashMap<String, SymbolRiskSnapshot>,
     pub initial_margin_required_for_positions: Decimal,
@@ -557,11 +633,20 @@ pub struct GetRiskSnapshotResponse {
     pub risk_snapshot: UserRiskSnapshot,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
+pub struct GetRiskSnapshotRequest {
+    /// Optional account ID. If omitted, default (primary) user account is used.
+    pub account_id: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
 pub struct GetVolumeRequest {
     pub start_timestamp_ns: u64,
     pub end_timestamp_ns: u64,
+    /// Optional account ID. If omitted, default (primary) user account is used.
+    pub account_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -729,9 +814,13 @@ pub struct GetCandleResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
 pub struct GetBboCandlesRequest {
+    /// Instrument symbol (e.g. "XAU-PERP")
     pub symbol: String,
+    /// Start of the time range (nanoseconds since epoch, inclusive)
     pub start_timestamp_ns: u64,
+    /// End of the time range (nanoseconds since epoch, inclusive)
     pub end_timestamp_ns: u64,
+    /// Candle width (e.g. "1s", "1m", "1h", "1d")
     pub candle_width: String,
 }
 
@@ -744,7 +833,9 @@ pub struct GetBboCandlesResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
 pub struct GetBboCandleRequest {
+    /// Instrument symbol (e.g. "XAU-PERP")
     pub symbol: String,
+    /// Candle width (e.g. "1s", "1m", "1h", "1d")
     pub candle_width: String,
 }
 
@@ -780,8 +871,44 @@ pub struct FundingRate {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
+pub struct GetEstimatedFundingRateRequest {
+    pub symbol: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub enum EstimatedFundingRateStatus {
+    Ready,
+    SettlementPending,
+    Unavailable,
+}
+
+/// Live estimated funding rate for a symbol, served verbatim from the cached
+/// estimate the settlement runner publishes.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct GetEstimatedFundingRateResponse {
+    pub symbol: String,
+    pub status: EstimatedFundingRateStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    pub funding_rate: Option<Decimal>,
+    pub funding_amount: Option<Decimal>,
+    pub benchmark_price: Option<Decimal>,
+    pub settlement_price: Option<Decimal>,
+    pub timestamp: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
 pub struct GetAccountEquityHistoryRequest {
+    /// Optional account ID. If omitted, default (primary) user account is used.
+    pub account_id: Option<String>,
     pub start_timestamp_ns: u64,
     pub end_timestamp_ns: u64,
     /// Desired duration between returned points.
@@ -815,6 +942,7 @@ pub struct SignupRequest {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct SignupResponse {
     pub user_id: String,
+    pub account_id: String,
 }
 
 /// Default orderbook depth level when not specified (Level 2: aggregated quantities)

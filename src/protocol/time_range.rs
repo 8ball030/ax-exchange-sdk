@@ -1,9 +1,15 @@
 //! Time range params and responses for API endpoints.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail, ensure};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use serde_with::{serde_as, DisplayFromStr, PickFirst};
+use serde_with::{DisplayFromStr, PickFirst, serde_as};
+
+/// Maximum time window, in nanoseconds, that a historical time-series query may
+/// span. History endpoints (orders, fills, trades, transactions,
+/// funding-transactions) must supply an explicit range no wider than this
+/// (7 days); wider or unbounded ranges are rejected with a 400.
+pub const MAX_HISTORICAL_QUERY_WINDOW_NS: u64 = 7 * 24 * 60 * 60 * 1_000_000_000;
 
 /// Time range params for API endpoints.
 ///
@@ -39,11 +45,36 @@ impl TimeRangeNs {
     }
 
     pub fn validate(&self) -> Result<()> {
-        if let (Some(start), Some(end)) = (self.start_timestamp_ns, self.end_timestamp_ns) {
-            if end <= start {
-                bail!("end_timestamp_ns must be greater than start_timestamp_ns");
-            }
+        if let (Some(start), Some(end)) = (self.start_timestamp_ns, self.end_timestamp_ns)
+            && end <= start
+        {
+            bail!("end_timestamp_ns must be greater than start_timestamp_ns");
         }
+        Ok(())
+    }
+
+    /// Require an explicit, bounded range no wider than `max_window_ns`.
+    ///
+    /// Both bounds must be present and `end - start` must not exceed
+    /// `max_window_ns`. Unlike silently clamping, this surfaces a clear error so
+    /// the caller knows exactly which window was (not) applied. Intended to gate
+    /// queries to a bounded window so large lookbacks are rejected rather than
+    /// served slowly.
+    pub fn ensure_within_max_window(&self, max_window_ns: u64) -> Result<()> {
+        let (Some(start), Some(end)) = (self.start_timestamp_ns, self.end_timestamp_ns) else {
+            bail!(
+                "a bounded time range is required: provide both start_timestamp_ns and end_timestamp_ns"
+            );
+        };
+        ensure!(
+            end > start,
+            "end_timestamp_ns must be greater than start_timestamp_ns"
+        );
+        ensure!(
+            end - start <= max_window_ns,
+            "time range too wide: maximum {} days",
+            max_window_ns / (24 * 60 * 60 * 1_000_000_000)
+        );
         Ok(())
     }
 }
@@ -89,6 +120,66 @@ mod tests {
         let r = TimeRangeNs::from_datetimes(Some(pre_epoch), Some(post_epoch));
         assert_eq!(r.start_timestamp_ns, None);
         assert_eq!(r.end_timestamp_ns, Some(1_704_067_200_000_000_000));
+    }
+
+    const DAY_NS: u64 = 24 * 60 * 60 * 1_000_000_000;
+    const WINDOW_NS: u64 = 7 * DAY_NS;
+    const NOW_NS: u64 = 100 * DAY_NS;
+
+    #[test]
+    fn ensure_window_rejects_missing_bounds() {
+        for r in [
+            TimeRangeNs::default(),
+            TimeRangeNs {
+                start_timestamp_ns: Some(NOW_NS - DAY_NS),
+                end_timestamp_ns: None,
+            },
+            TimeRangeNs {
+                start_timestamp_ns: None,
+                end_timestamp_ns: Some(NOW_NS),
+            },
+        ] {
+            let err = r.ensure_within_max_window(WINDOW_NS).unwrap_err();
+            assert!(err.to_string().contains("bounded time range is required"));
+        }
+    }
+
+    #[test]
+    fn ensure_window_rejects_too_wide() {
+        let r = TimeRangeNs {
+            start_timestamp_ns: Some(NOW_NS - 8 * DAY_NS),
+            end_timestamp_ns: Some(NOW_NS),
+        };
+        let err = r.ensure_within_max_window(WINDOW_NS).unwrap_err();
+        assert_eq!(err.to_string(), "time range too wide: maximum 7 days");
+    }
+
+    #[test]
+    fn ensure_window_accepts_exact_and_within() {
+        let exact = TimeRangeNs {
+            start_timestamp_ns: Some(NOW_NS - WINDOW_NS),
+            end_timestamp_ns: Some(NOW_NS),
+        };
+        exact.ensure_within_max_window(WINDOW_NS).unwrap();
+
+        let within = TimeRangeNs {
+            start_timestamp_ns: Some(NOW_NS - DAY_NS),
+            end_timestamp_ns: Some(NOW_NS),
+        };
+        within.ensure_within_max_window(WINDOW_NS).unwrap();
+    }
+
+    #[test]
+    fn ensure_window_rejects_end_le_start() {
+        let r = TimeRangeNs {
+            start_timestamp_ns: Some(NOW_NS),
+            end_timestamp_ns: Some(NOW_NS),
+        };
+        let err = r.ensure_within_max_window(WINDOW_NS).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "end_timestamp_ns must be greater than start_timestamp_ns"
+        );
     }
 
     #[test]

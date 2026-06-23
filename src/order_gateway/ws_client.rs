@@ -4,22 +4,23 @@ pub use crate::types::ws::ConnectionState;
 pub use crate::ws_utils::ConnectionStateWatcher;
 use crate::{
     types::ws::{InternalCommand, TokenRefreshFn, WsClientError},
-    ws_utils::{connection_supervisor, PendingRequests, WsSubscription},
+    ws_utils::{PendingRequests, WsSubscription, connection_supervisor},
 };
 use dashmap::DashMap;
 use log::info;
 use log::trace;
 use std::{
     sync::{
-        atomic::{AtomicI32, Ordering},
         Arc,
+        atomic::{AtomicI32, Ordering},
     },
     time::Duration,
 };
 use tokio::{
     sync::{
+        Mutex,
         mpsc::{self, UnboundedSender},
-        oneshot, watch, Mutex,
+        oneshot, watch,
     },
     task::JoinHandle,
     time::timeout,
@@ -210,8 +211,10 @@ impl OrderGatewayWsClient {
     // ---------------------------------------------------------------------------
 
     pub async fn get_open_orders(&self) -> Result<GetOpenOrdersResponse, ClientError> {
-        self.send_request_await(OrderGatewayRequest::GetOpenOrders(GetOpenOrdersRequest {}))
-            .await
+        self.send_request_await(OrderGatewayRequest::GetOpenOrders(GetOpenOrdersRequest {
+            account_id: None,
+        }))
+        .await
     }
 
     pub async fn place_order(
@@ -222,12 +225,36 @@ impl OrderGatewayWsClient {
             .await
     }
 
+    // pub async fn get_estimated_funding_rate(&mut self, symbol: &str) -> Result<i32> {
+    //     let request_id = self.next_request_id;
+    //     self.next_request_id += 1;
+    //     let req = protocol::order_gateway::OrderGatewayRequest::GetEstimatedFundingRate(
+    //         protocol::api_gateway::GetEstimatedFundingRateRequest {
+    //             symbol: symbol.to_string(),
+    //         },
+    //     );
+    //     let wrapped_req = protocol::ws::Request {
+    //         request_id,
+    //         request: req,
+    //     };
+    //     let payload = serde_json::to_string(&wrapped_req)?;
+    //     if let Some(ref callback) = self.on_send {
+    //         callback(&payload);
+    //     }
+    //     trace!("sending get estimated funding rate request: {payload}");
+    //     self.ws.send(Message::Text(payload.into())).await?;
+    //     self.in_flight_requests
+    //         .insert(request_id, OrderGatewayRequestType::GetEstimatedFundingRate);
+    //     Ok(request_id)
+    // }
+
     pub async fn cancel_order(
         &self,
         order_id: &crate::OrderId,
     ) -> Result<CancelOrderResponse, ClientError> {
         self.send_request_await(OrderGatewayRequest::CancelOrder(CancelOrderRequest {
             order: order_id.clone().into(),
+            account_id: None,
         }))
         .await
     }
@@ -239,6 +266,7 @@ impl OrderGatewayWsClient {
         self.send_request_await(OrderGatewayRequest::CancelAllOrders(
             CancelAllOrdersRequest {
                 symbol: symbol.map(|s| s.to_string()),
+                account_id: None,
             },
         ))
         .await

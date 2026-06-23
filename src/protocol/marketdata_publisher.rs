@@ -1,19 +1,39 @@
 use crate::{
+    InstrumentState,
     protocol::common::Timestamp,
     types::trading::{BboCandle, Candle, CandleWidth},
-    InstrumentState,
 };
 use enumflags2::bitflags;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
+fn default_true() -> bool {
+    true
+}
+
+fn is_true(b: &bool) -> bool {
+    *b
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum MarketdataRequest<'a> {
-    /// Subscribe to ticker and trade updates on a symbol at a level.
+    /// Subscribe to market data on a symbol at a level. A book level
+    /// (`LEVEL_1`/`LEVEL_2`/`LEVEL_3`) delivers book updates, ticker, and
+    /// trades; `TRADES` delivers only trade prints.
+    ///
+    /// For a book-level subscription, `trades` and `ticker` (both default
+    /// `true`) independently suppress trade or ticker delivery — e.g. set
+    /// `trades: false` for a book-only feed, or `ticker: false` for book and
+    /// trades without the periodic ticker. They have no effect on a `TRADES`
+    /// subscription.
     Subscribe {
         symbol: &'a str,
         level: SubscriptionLevel,
+        #[serde(default = "default_true", skip_serializing_if = "is_true")]
+        trades: bool,
+        #[serde(default = "default_true", skip_serializing_if = "is_true")]
+        ticker: bool,
     },
     /// Unsubscribe from ticker and trade updates on a symbol.
     Unsubscribe { symbol: &'a str },
@@ -44,6 +64,17 @@ pub enum SubscriptionLevel {
     /// Receive updates (price, quantity, and distinct orders) for all levels of the order book.
     #[serde(rename = "LEVEL_3")]
     Level3 = 0b100,
+    /// Receive only trade prints, with no order book or ticker updates.
+    #[serde(rename = "TRADES")]
+    Trades = 0b1000,
+}
+
+impl SubscriptionLevel {
+    /// The book levels (`LEVEL_1`/`LEVEL_2`/`LEVEL_3`), i.e. every level that
+    /// delivers order book and ticker updates as opposed to trades only.
+    pub fn book_levels() -> enumflags2::BitFlags<SubscriptionLevel> {
+        SubscriptionLevel::Level1 | SubscriptionLevel::Level2 | SubscriptionLevel::Level3
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -73,7 +104,7 @@ pub enum MarketdataEvent {
 pub struct Ticker {
     #[serde(flatten)]
     pub timestamp: Timestamp,
-    /// Instrument symbol; e.g. GBPUSD-PERP, EURUSD-PERP
+    /// Instrument symbol; e.g. XAU-PERP, EURUSD-PERP
     #[serde(rename = "s")]
     pub symbol: String,
     /// Last trade price in USD

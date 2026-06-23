@@ -67,10 +67,10 @@ async fn test_marketdata_ws_connect() -> Result<()> {
     // Wait for a heartbeat with a timeout
     let received_event = timeout(Duration::from_secs(10), async {
         loop {
-            if let Some(event) = md.next().await? {
-                if matches!(event.as_ref(), MarketdataEvent::Heartbeat(_)) {
-                    return Ok::<_, anyhow::Error>(true);
-                }
+            if let Some(event) = md.next().await?
+                && matches!(event.as_ref(), MarketdataEvent::Heartbeat(_))
+            {
+                return Ok::<_, anyhow::Error>(true);
             }
         }
     })

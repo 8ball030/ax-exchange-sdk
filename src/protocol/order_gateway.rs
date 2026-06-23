@@ -1,18 +1,19 @@
 use crate::{
+    ClientOrderId,
     protocol::{
+        api_gateway::{GetEstimatedFundingRateRequest, GetEstimatedFundingRateResponse},
         common::{Fill, Timestamp},
         pagination::{TimeseriesPage, TimeseriesPagination},
         ws,
     },
     trading::TimeInForce,
     types::{Order, OrderId, OrderRejectReason, OrderState, Side},
-    ClientOrderId,
 };
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use chrono::Utc;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
-use serde_with::{formats::CommaSeparator, serde_as, StringWithSeparator};
+use serde_with::{StringWithSeparator, formats::CommaSeparator, serde_as};
 
 /// Query parameters for the order gateway WebSocket endpoint (`/ws`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,6 +22,22 @@ pub struct WsQueryParams {
     /// When true, all orders placed on this connection will be cancelled on disconnect.
     #[serde(default)]
     pub cancel_on_disconnect: bool,
+    /// When set, the maximum number of seconds the connection may go without a heartbeat from
+    /// the client before the server closes it, triggering cancel-on-disconnect if also enabled.
+    /// The client should send a heartbeat message (`{"t":"h"}`) comfortably more often than this
+    /// so normal timing jitter never trips the timeout. This lets a client detect and recover
+    /// from a hard network drop (where no TCP close is delivered) far faster than the operating
+    /// system's TCP timeout. Leave unset to disable.
+    #[serde(default)]
+    pub client_heartbeat_timeout: Option<u32>,
+    /// Optional account ID to scope this connection's event stream to (e.g.
+    /// `?account_id=ACME-1`). The server streams events only for this account,
+    /// and only if the authenticated user is permitted to read it — requesting
+    /// an account the user cannot read is rejected. When unset, the connection
+    /// receives events for the user's default account. A multi-account view is
+    /// one connection per account, not a single connection spanning a set.
+    #[serde(default)]
+    pub account_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,10 +52,17 @@ pub enum OrderGatewayRequest {
     GetOrderStatus(GetOrderStatusRequest),
     #[serde(rename = "o")]
     GetOpenOrders(GetOpenOrdersRequest),
+    #[serde(rename = "ef")]
+    GetEstimatedFundingRate(GetEstimatedFundingRateRequest),
     #[serde(rename = "p")]
     PlaceOrder(PlaceOrderRequest),
     #[serde(rename = "r")]
     ReplaceOrder(ReplaceOrderRequest),
+    /// Client-to-server liveness heartbeat. Sent by clients that connected with
+    /// `client_heartbeat_timeout` to prove the session is still alive. Fire-and-forget; the
+    /// server sends no response.
+    #[serde(rename = "h")]
+    Heartbeat,
 }
 
 /// Request types for the admin firehose websocket endpoint (/admin/ws)
@@ -57,6 +81,7 @@ pub enum OrderGatewayRequestType {
     CancelOrder,
     GetOrderStatus,
     GetOpenOrders,
+    GetEstimatedFundingRate,
     PlaceOrder,
     ReplaceOrder,
 }
@@ -70,6 +95,7 @@ pub enum OrderGatewayResponse {
     CancelOrderResponse(CancelOrderResponse),
     GetOrderStatusResponse(GetOrderStatusResponse),
     GetOpenOrdersResponse(GetOpenOrdersResponse),
+    GetEstimatedFundingRateResponse(GetEstimatedFundingRateResponse),
     LoginResponse(LoginResponse),
     PlaceOrderResponse(PlaceOrderResponse),
     ReplaceOrderResponse(ReplaceOrderResponse),
@@ -99,6 +125,14 @@ pub struct LoginResponse {
     pub logged_in: String,
     #[serde(rename = "o")]
     pub open_orders: Option<Vec<OrderDetails>>,
+    /// Whether cancel-on-disconnect is active for this session.
+    #[serde(rename = "cod", default)]
+    pub cancel_on_disconnect: bool,
+    /// The client heartbeat timeout (in seconds) the server accepted for this session — the
+    /// maximum silence before the connection is dropped — echoing back the `client_heartbeat_timeout`
+    /// query parameter when one was requested.
+    #[serde(rename = "chb", default, skip_serializing_if = "Option::is_none")]
+    pub client_heartbeat_timeout: Option<u32>,
 }
 
 impl LoginResponse {
@@ -125,7 +159,7 @@ pub struct AdminLoginResponse {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct PlaceOrderRequest {
-    /// Order symbol; e.g. GBPUSD-PERP, EURUSD-PERP
+    /// Order symbol; e.g. XAU-PERP, EURUSD-PERP
     #[serde(rename = "s")]
     pub symbol: String,
     /// Order side; buying ("B") or selling ("S")
@@ -153,14 +187,21 @@ pub struct PlaceOrderRequest {
     /// Self-trade prevention behavior (defaults to rejecting the incoming aggressor)
     #[serde(rename = "st", default)]
     pub self_trade_prevention: crate::types::SelfTradeBehavior,
+    /// Optional account ID. If omitted, default (primary) user account is used.
+    #[serde(rename = "aid", skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
 }
 
 impl PlaceOrderRequest {
-    /// Convert this place order request into a pending order
+    /// Convert this place order request into a pending order. If
+    /// `self.account_id` is `None`, the order is attributed to the user's
+    /// default account (whose id matches the user id).
     pub fn into_pending_order(self, order_id: OrderId, user_id: String) -> crate::types::Order {
+        let account_id = self.account_id.unwrap_or_else(|| user_id.clone());
         crate::types::Order {
             order_id,
             user_id,
+            account_id,
             symbol: self.symbol,
             side: self.side,
             quantity: self.quantity,
@@ -192,6 +233,7 @@ impl From<crate::types::PlaceOrder> for PlaceOrderRequest {
             tag: value.tag,
             clord_id: value.clord_id,
             self_trade_prevention: value.self_trade_prevention,
+            account_id: value.account_id,
         }
     }
 }
@@ -254,6 +296,13 @@ pub struct CancelOrderRequest {
     /// `cid` (client order id).
     #[serde(flatten)]
     pub order: OrderReference,
+    /// Optional account ID, selecting which account's `cid` namespace the
+    /// reference resolves against. Only meaningful when the order is given by
+    /// `cid` — a `cid` is unique per account, not globally — and superfluous
+    /// when `oid` is supplied (server order ids are globally unique). If
+    /// omitted, the default (primary) account is used.
+    #[serde(rename = "aid", default, skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -285,6 +334,13 @@ pub struct ReplaceOrderRequest {
     /// Whether the replacement order is post-only (optional, inherits from original if not provided)
     #[serde(rename = "po", skip_serializing_if = "Option::is_none")]
     pub post_only: Option<bool>,
+    /// Optional account ID, selecting which account's `cid` namespace the
+    /// reference resolves against. Only meaningful when the order is given by
+    /// `cid` — a `cid` is unique per account, not globally — and superfluous
+    /// when `oid` is supplied (server order ids are globally unique). If
+    /// omitted, the default (primary) account is used.
+    #[serde(rename = "aid", default, skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -304,6 +360,9 @@ pub struct CancelAllOrdersRequest {
     /// Optional symbol filter. If provided, only orders for this symbol will be canceled.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub symbol: Option<String>,
+    /// Optional account ID. If omitted, default (primary) user account is used.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
 }
 
 /// Response for canceling all orders.
@@ -315,7 +374,11 @@ pub struct CancelAllOrdersResponse {}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema, utoipa::IntoParams))]
-pub struct GetOpenOrdersRequest {}
+pub struct GetOpenOrdersRequest {
+    /// Optional account ID. If omitted, default (primary) user account is used.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -335,6 +398,10 @@ pub struct AdminSubscribeRequest {
     /// Subscribe to all order state changes (acks, cancels, rejects, expires, etc.)
     #[serde(rename = "o", default)]
     pub orders: bool,
+    /// Subscribe to reject events only (order rejects and cancel rejects).
+    /// When set without `orders`, only reject events are sent.
+    #[serde(rename = "r", default)]
+    pub rejects: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -394,7 +461,7 @@ impl OrderGatewayEvent {
     pub fn symbol(&self) -> Option<&str> {
         match self {
             OrderGatewayEvent::Heartbeat(..) => None,
-            OrderGatewayEvent::CancelRejected(..) => None,
+            OrderGatewayEvent::CancelRejected(rej) => rej.order.as_ref().map(|o| o.symbol.as_str()),
             OrderGatewayEvent::OrderAcked(ack) => Some(&ack.order.symbol),
             OrderGatewayEvent::OrderCanceled(ccl) => Some(&ccl.order.symbol),
             OrderGatewayEvent::OrderReplacedOrAmended(roa) => Some(&roa.replaced_order.symbol),
@@ -420,6 +487,9 @@ pub struct CancelRejected {
     pub reject_reason: String,
     #[serde(rename = "txt")]
     pub reject_message: String,
+    // Optional for wire-compat with producers/consumers predating this field.
+    #[serde(rename = "o", default, skip_serializing_if = "Option::is_none")]
+    pub order: Option<OrderDetails>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -544,8 +614,14 @@ pub struct OrderFilled {
 pub struct OrderDetails {
     #[serde(rename = "oid")]
     pub order_id: OrderId,
+    /// Actor of record — the authenticated user who *placed* this order. This
+    /// is distinct from the owning `account_id`: a user may place orders on an
+    /// account they do not own (e.g. a proxy or algo acting for another party).
     #[serde(rename = "u")]
     pub user_id: String,
+    /// Owning account — whose positions, balance, and risk this order moves.
+    #[serde(rename = "aid")]
+    pub account_id: String,
     #[serde(rename = "s")]
     pub symbol: String,
     #[serde(rename = "p")]
@@ -583,6 +659,7 @@ impl TryFrom<OrderDetails> for crate::types::Order {
         Ok(crate::types::Order {
             order_id: value.order_id,
             user_id: value.user_id,
+            account_id: value.account_id,
             symbol: value.symbol,
             price: value.price,
             quantity: value.quantity,
@@ -610,6 +687,7 @@ impl From<crate::types::Order> for OrderDetails {
         Self {
             order_id: value.order_id,
             user_id: value.user_id,
+            account_id: value.account_id,
             symbol: value.symbol,
             price: value.price,
             quantity: value.quantity,
@@ -636,6 +714,8 @@ impl From<crate::types::Order> for OrderDetails {
 pub struct FillDetails {
     #[serde(rename = "tid")]
     pub trade_id: String,
+    #[serde(rename = "aid")]
+    pub account_id: String,
     #[serde(rename = "s")]
     pub symbol: String,
     #[serde(rename = "q")]
@@ -660,6 +740,9 @@ pub struct GetOrdersRequest {
     #[serde_as(as = "Option<StringWithSeparator::<CommaSeparator, OrderState>>")]
     #[serde(default)]
     pub order_states: Option<Vec<OrderState>>,
+    /// Optional account ID. If omitted, default (primary) user account is used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -812,6 +895,7 @@ pub struct GetOrderFillsResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::protocol::ws;
     use crate::types::SelfTradeBehavior;
     use insta::assert_json_snapshot;
 
@@ -827,6 +911,7 @@ mod tests {
             tag: None,
             clord_id: None,
             self_trade_prevention: SelfTradeBehavior::CancelIncoming,
+            account_id: None,
         };
         assert_json_snapshot!(req, @r#"
         {
@@ -853,6 +938,7 @@ mod tests {
             tag: None,
             clord_id: None,
             self_trade_prevention: SelfTradeBehavior::default(),
+            account_id: None,
         };
         assert_json_snapshot!(req, @r#"
         {
@@ -865,6 +951,58 @@ mod tests {
           "st": "CancelIncoming"
         }
         "#);
+    }
+
+    #[test]
+    fn place_order_request_with_account_id() {
+        let req = PlaceOrderRequest {
+            symbol: "EURUSD-PERP".to_string(),
+            side: Side::Buy,
+            quantity: 100,
+            price: "1.2345".parse().unwrap(),
+            time_in_force: TimeInForce::GoodTillCanceled,
+            post_only: false,
+            tag: None,
+            clord_id: None,
+            self_trade_prevention: SelfTradeBehavior::default(),
+            account_id: Some("01KB4E-MGKR-HXEG".to_string()),
+        };
+        assert_json_snapshot!(req, @r#"
+        {
+          "s": "EURUSD-PERP",
+          "d": "B",
+          "q": 100,
+          "p": "1.2345",
+          "tif": "GTC",
+          "po": false,
+          "st": "CancelIncoming",
+          "aid": "01KB4E-MGKR-HXEG"
+        }
+        "#);
+    }
+
+    #[test]
+    fn place_order_request_account_id_omitted_deserializes_to_none() {
+        let json = r#"{"s":"TEST","d":"B","q":1,"p":"1.00","tif":"GTC","po":false}"#;
+        let req: PlaceOrderRequest = serde_json::from_str(json).expect("deser without aid");
+        assert!(req.account_id.is_none());
+    }
+
+    #[test]
+    fn order_details_account_id_round_trip() {
+        let json =
+            r#"{"oid":"ORD-1","u":"user1","aid":"01KB4E-MGKR-HXEG","s":"TEST-PERP","p":"100","#
+                .to_string()
+                + r#""q":1,"xq":0,"rq":1,"o":"A","d":"B","tif":"GTC","po":false,"ts":0,"tn":0}"#;
+        let details: OrderDetails = serde_json::from_str(&json).expect("deser with aid");
+        assert_eq!(details.account_id, "01KB4E-MGKR-HXEG");
+    }
+
+    #[test]
+    fn place_order_request_account_id_round_trip() {
+        let json = r#"{"s":"TEST","d":"B","q":1,"p":"1.00","tif":"GTC","po":false,"aid":"01KB4E-MGKR-HXEG"}"#;
+        let req: PlaceOrderRequest = serde_json::from_str(json).expect("deser with aid");
+        assert_eq!(req.account_id.as_deref(), Some("01KB4E-MGKR-HXEG"));
     }
 
     fn deser_place_order_with_stp(st_value: &str) -> PlaceOrderRequest {
@@ -1014,9 +1152,120 @@ mod tests {
     }
 
     #[test]
+    fn cancel_order_request_serialization() {
+        let by_oid = CancelOrderRequest {
+            order: OrderId::new_unchecked("O-12345").into(),
+            account_id: None,
+        };
+        let by_cid = CancelOrderRequest {
+            order: ClientOrderId(42).into(),
+            account_id: Some("ACME-1".to_string()),
+        };
+        assert_json_snapshot!(by_oid, @r#"
+        {
+          "oid": "O-12345"
+        }
+        "#);
+        assert_json_snapshot!(by_cid, @r#"
+        {
+          "cid": 42,
+          "aid": "ACME-1"
+        }
+        "#);
+    }
+
+    #[test]
+    fn cancel_order_request_deserialization() {
+        let json_oid = r#"{"oid": "O-12345"}"#;
+        let json_cid = r#"{"cid": 42}"#;
+
+        let parsed: CancelOrderRequest = serde_json::from_str(json_oid).expect("parse with oid");
+        assert_json_snapshot!(parsed, @r#"
+        {
+          "oid": "O-12345"
+        }
+        "#);
+
+        let parsed: CancelOrderRequest = serde_json::from_str(json_cid).expect("parse with cid");
+        assert_json_snapshot!(parsed, @r#"
+        {
+          "cid": 42
+        }
+        "#);
+    }
+
+    #[test]
+    fn cancel_order_request_missing_identifier_fails() {
+        let json = r#"{}"#;
+        assert!(serde_json::from_str::<CancelOrderRequest>(json).is_err());
+    }
+
+    #[test]
+    fn cancel_order_request_both_identifiers_fails() {
+        let json = r#"{"oid": "O-12345", "cid": 42}"#;
+        let err = serde_json::from_str::<CancelOrderRequest>(json).unwrap_err();
+        assert!(
+            err.to_string().contains("mutually exclusive"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn replace_order_request_both_identifiers_fails() {
+        let json = r#"{"oid": "O-12345", "cid": 42, "p": "100.50"}"#;
+        let err = serde_json::from_str::<ReplaceOrderRequest>(json).unwrap_err();
+        assert!(
+            err.to_string().contains("mutually exclusive"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn replace_order_request_missing_identifier_fails() {
+        let json = r#"{"p": "100.50"}"#;
+        assert!(serde_json::from_str::<ReplaceOrderRequest>(json).is_err());
+    }
+
+    #[test]
+    fn replace_order_request_serialization() {
+        let by_oid = ReplaceOrderRequest {
+            order: OrderId::new_unchecked("O-12345").into(),
+            price: Some("100.50".parse().unwrap()),
+            quantity: None,
+            time_in_force: None,
+            post_only: None,
+            account_id: None,
+        };
+        let by_cid = ReplaceOrderRequest {
+            order: ClientOrderId(99).into(),
+            price: Some("100.50".parse().unwrap()),
+            quantity: None,
+            time_in_force: None,
+            post_only: None,
+            account_id: Some("ACME-1".to_string()),
+        };
+        assert_json_snapshot!(by_oid, @r#"
+        {
+          "oid": "O-12345",
+          "p": "100.50"
+        }
+        "#);
+        assert_json_snapshot!(by_cid, @r#"
+        {
+          "cid": 99,
+          "p": "100.50",
+          "aid": "ACME-1"
+        }
+        "#);
+    }
+
+    #[test]
     fn cancel_all_orders_request_serialization() {
         assert_json_snapshot!(
-            CancelAllOrdersRequest { symbol: Some("TEST-PERP".to_string()) },
+            CancelAllOrdersRequest {
+                symbol: Some("TEST-PERP".to_string()),
+                account_id: None,
+            },
             @r#"
         {
           "symbol": "TEST-PERP"
@@ -1024,7 +1273,7 @@ mod tests {
         "#
         );
         assert_json_snapshot!(
-            CancelAllOrdersRequest { symbol: None },
+            CancelAllOrdersRequest { symbol: None, account_id: None },
             @"{}"
         );
     }
@@ -1035,6 +1284,7 @@ mod tests {
             request_id: 7,
             request: OrderGatewayRequest::CancelAllOrders(CancelAllOrdersRequest {
                 symbol: Some("EURUSD-PERP".to_string()),
+                account_id: None,
             }),
         };
         assert_json_snapshot!(wrapped, @r#"
@@ -1047,7 +1297,10 @@ mod tests {
 
         let wrapped_no_symbol = ws::Request {
             request_id: 8,
-            request: OrderGatewayRequest::CancelAllOrders(CancelAllOrdersRequest { symbol: None }),
+            request: OrderGatewayRequest::CancelAllOrders(CancelAllOrdersRequest {
+                symbol: None,
+                account_id: None,
+            }),
         };
         assert_json_snapshot!(wrapped_no_symbol, @r#"
         {
@@ -1065,7 +1318,7 @@ mod tests {
         // 2024-01-01T00:00:00Z = 1_704_067_200_000_000_000
         // 2024-01-31T23:59:59Z = 1_706_745_599_000_000_000
         let request = GetOrdersRequest {
-            symbol: Some("BTCUSD-PERP".to_string()),
+            symbol: Some("XAU-PERP".to_string()),
             timeseries: TimeseriesPagination {
                 range: TimeRangeNs::from_datetimes(
                     Some("2024-01-01T00:00:00Z".parse().unwrap()),
@@ -1078,10 +1331,11 @@ mod tests {
                 },
             },
             order_states: Some(vec![OrderState::Filled]),
+            account_id: None,
         };
         assert_json_snapshot!(request, @r#"
         {
-          "symbol": "BTCUSD-PERP",
+          "symbol": "XAU-PERP",
           "start_timestamp_ns": 1704067200000000000,
           "end_timestamp_ns": 1706745599000000000,
           "sort_ts": "desc",
@@ -1090,5 +1344,142 @@ mod tests {
           "order_states": "FILLED"
         }
         "#);
+    }
+
+    fn sample_order_details() -> OrderDetails {
+        OrderDetails {
+            account_id: "a".to_string(),
+            order_id: OrderId::new_unchecked("ORD-1"),
+            user_id: "u".to_string(),
+            symbol: "BTC-PERP".to_string(),
+            price: "50000".parse().unwrap(),
+            quantity: 10,
+            filled_quantity: 0,
+            remaining_quantity: 10,
+            order_state: OrderState::Accepted,
+            side: Side::Buy,
+            time_in_force: TimeInForce::GoodTillCanceled,
+            clord_id: None,
+            tag: None,
+            post_only: false,
+            reject_reason: None,
+            reject_message: None,
+            timestamp: Timestamp {
+                ts: 1_704_067_200,
+                tn: 0,
+            },
+        }
+    }
+
+    #[test]
+    fn cancel_rejected_with_order_details_serialization() {
+        let rej = CancelRejected {
+            timestamp: Timestamp {
+                ts: 1_704_067_200,
+                tn: 0,
+            },
+            order_id: OrderId::new_unchecked("ORD-1"),
+            clord_id: None,
+            reject_reason: "rejected".to_string(),
+            reject_message: "too late to cancel".to_string(),
+            order: Some(sample_order_details()),
+        };
+        assert_json_snapshot!(rej, @r#"
+        {
+          "ts": 1704067200,
+          "tn": 0,
+          "oid": "ORD-1",
+          "r": "rejected",
+          "txt": "too late to cancel",
+          "o": {
+            "oid": "ORD-1",
+            "u": "u",
+            "aid": "a",
+            "s": "BTC-PERP",
+            "p": "50000",
+            "q": 10,
+            "xq": 0,
+            "rq": 10,
+            "o": "ACCEPTED",
+            "d": "B",
+            "tif": "GTC",
+            "po": false,
+            "ts": 1704067200,
+            "tn": 0
+          }
+        }
+        "#);
+        assert_eq!(
+            OrderGatewayEvent::CancelRejected(rej).symbol(),
+            Some("BTC-PERP")
+        );
+    }
+
+    #[test]
+    fn cancel_rejected_without_order_details_omits_field() {
+        // Wire compat: when `order` is None, the "o" key is omitted entirely so
+        // legacy consumers that don't know about it see the original payload.
+        let rej = CancelRejected {
+            timestamp: Timestamp {
+                ts: 1_704_067_200,
+                tn: 0,
+            },
+            order_id: OrderId::new_unchecked("ORD-1"),
+            clord_id: None,
+            reject_reason: "rejected".to_string(),
+            reject_message: "too late to cancel".to_string(),
+            order: None,
+        };
+        assert_json_snapshot!(rej, @r#"
+        {
+          "ts": 1704067200,
+          "tn": 0,
+          "oid": "ORD-1",
+          "r": "rejected",
+          "txt": "too late to cancel"
+        }
+        "#);
+        assert_eq!(OrderGatewayEvent::CancelRejected(rej).symbol(), None);
+    }
+
+    #[test]
+    fn cancel_rejected_legacy_wire_format_deserializes() {
+        // Wire compat: a legacy producer that doesn't emit "o" must still
+        // deserialize cleanly, leaving `order` as None.
+        let legacy = r#"{
+            "ts": 1704067200,
+            "tn": 0,
+            "oid": "ORD-1",
+            "r": "rejected",
+            "txt": "too late to cancel"
+        }"#;
+        let rej: CancelRejected = serde_json::from_str(legacy).expect("legacy deser");
+        assert_eq!(rej.order_id, OrderId::new_unchecked("ORD-1"));
+        assert!(rej.order.is_none());
+    }
+
+    #[test]
+    fn admin_subscribe_request_rejects_wire_format() {
+        let req = AdminSubscribeRequest {
+            fills: false,
+            orders: false,
+            rejects: true,
+        };
+        assert_json_snapshot!(req, @r#"
+        {
+          "f": false,
+          "o": false,
+          "r": true
+        }
+        "#);
+    }
+
+    #[test]
+    fn admin_subscribe_request_rejects_default_false() {
+        let json = r#"{"rid":1,"t":"s","f":true,"o":false}"#;
+        let wrapped: ws::Request<AdminFirehoseRequest> =
+            serde_json::from_str(json).expect("deser without r");
+        let AdminFirehoseRequest::Subscribe(sub) = wrapped.request;
+        assert!(!sub.rejects);
     }
 }

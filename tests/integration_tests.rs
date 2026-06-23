@@ -1,9 +1,9 @@
 use anyhow::Result;
 use ax_exchange_sdk::{
+    ArchitectX, PlaceOrder, SelfTradeBehavior, Side,
     environment::Environment,
     protocol::order_gateway::OrderReference,
     trading::{OrderState, TimeInForce},
-    ArchitectX, PlaceOrder, SelfTradeBehavior, Side,
 };
 use rust_decimal::Decimal;
 use std::str::FromStr;
@@ -42,22 +42,41 @@ async fn test_order_life_cycle() -> Result<()> {
         let open_orders = order_ws.get_open_orders().await?;
         println!("Currently have {} open orders.", open_orders.orders.len());
 
-        let symbol = "XAU-PERP";
-        // we now get the market price of XAU such that we can place a resting order at a reasonable price level
+        let symbol = "EURUSD-PERP";
+        // we now get the market price of EURUSD such that we can place a resting order at a reasonable price level
         let md_api = client.api_gateway()?;
-        let xau_instrument = md_api
+        let eurusd_ticker = md_api
             .get_tickers()
             .await?
             .tickers
             .into_iter()
             .find(|t| t.symbol == symbol)
-            .expect("XAU-PERP ticker not found");
-        println!("Current XAU price: {:?}", xau_instrument.bid_price);
+            .unwrap_or_else(|| panic!("{} ticker not found", symbol));
+        println!("Current {} price: {:?}", symbol, eurusd_ticker.bid_price);
+
+        let eurusd_instrument = md_api
+            .get_instruments()
+            .await?
+            .instruments
+            .into_iter()
+            .find(|i| i.0.symbol == symbol)
+            .unwrap_or_else(|| panic!("{} instrument not found", symbol));
 
         let side = Side::Buy;
-        let quantity = 1;
-        let price =
-            xau_instrument.bid_price.expect("No Price for symbol!") - Decimal::from_str("10.0")?; // place a resting order $10 below the current price
+        let quantity = 100;
+
+        // we now place a resting order at a price slightly below the current market price to ensure it rests in the order book.
+        // we round to the tick size of the instrument to ensure the price is valid.
+        let tick_size = eurusd_instrument.0.tick_size;
+        let raw_price = eurusd_ticker
+            .bid_price
+            .ok_or_else(|| anyhow::anyhow!("{} ticker has no bid price", symbol))?;
+
+        let price = Decimal::from_str(&format!(
+            "{:.1$}",
+            raw_price * Decimal::new(99, 2), // place order at 99% of the current market price
+            tick_size.normalize().scale() as usize
+        ))?;
 
         let place_order = PlaceOrder {
             symbol: symbol.to_string(),
@@ -69,6 +88,7 @@ async fn test_order_life_cycle() -> Result<()> {
             tag: Some("test_order".to_string()),
             clord_id: None,
             self_trade_prevention: SelfTradeBehavior::CancelBoth,
+            account_id: None, // use default account
         };
 
         let res = order_ws.place_order(place_order).await?;
@@ -112,6 +132,7 @@ async fn test_order_life_cycle() -> Result<()> {
             cancel_accepted
         );
 
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await; // wait a second to ensure the cancel event is processed
         let order_status_after_cancel = client
             .order_gateway()
             .expect("Failed to get order gateway client")

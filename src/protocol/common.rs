@@ -41,6 +41,7 @@ pub struct Fill {
     pub trade_id: String,
     pub order_id: Option<String>,
     pub user_id: String,
+    pub account_id: String,
     pub timestamp: DateTime<Utc>,
     pub symbol: String,
     pub price: Decimal,
