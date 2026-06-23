@@ -2,7 +2,7 @@ use anyhow::Result;
 use ax_exchange_sdk::{
     ArchitectX, PlaceOrder, SelfTradeBehavior, Side,
     environment::Environment,
-    protocol::order_gateway::OrderReference,
+    protocol::{api_gateway::GetTransactionsRequest, order_gateway::OrderReference},
     trading::{OrderState, TimeInForce},
 };
 use rust_decimal::Decimal;
@@ -174,6 +174,54 @@ async fn test_user_risk_snapshot() -> Result<()> {
             risk_snapshot.is_ok(),
             "Failed to fetch risk snapshot: {:?}",
             risk_snapshot.err()
+        );
+        Ok(())
+    })
+}
+
+// we test the endpoint for risk
+#[tokio::test]
+async fn test_positions() -> Result<()> {
+    with_private_client!(client, {
+        match client.refresh_user_token(true).await {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("Failed to refresh user token: {:?}", e);
+                return Ok(());
+            }
+        }
+        let api = client.api_gateway()?;
+        let positions = api.get_positions().await;
+        assert!(
+            positions.is_ok(),
+            "Failed to fetch positions: {:?}",
+            positions.err()
+        );
+        Ok(())
+    })
+}
+
+// we test the endpoint for funding transactions
+#[tokio::test]
+async fn test_funding_transactions() -> Result<()> {
+    with_private_client!(client, {
+        match client.refresh_user_token(true).await {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("Failed to refresh user token: {:?}", e);
+                return Ok(());
+            }
+        }
+        let request = GetTransactionsRequest {
+            transaction_types: vec!["funding".to_string()],
+        };
+
+        let api = client.api_gateway()?;
+        let funding_transactions = api.get_transactions(request).await;
+        assert!(
+            funding_transactions.is_ok(),
+            "Failed to fetch funding transactions: {:?}",
+            funding_transactions.err()
         );
         Ok(())
     })
