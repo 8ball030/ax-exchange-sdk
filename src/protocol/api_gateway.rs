@@ -523,7 +523,7 @@ pub struct GetPositionsResponse {
     pub positions: Vec<Position>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct Position {
     pub user_id: Option<String>,

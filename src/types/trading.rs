@@ -240,6 +240,20 @@ pub struct PlaceOrder {
     pub self_trade_prevention: SelfTradeBehavior,
     /// Optional account ID. If omitted, default (primary) user account is used.
     pub account_id: Option<String>,
+    /// Optional reprice behaviour. If omitted, default behaviour is used.
+    #[serde(rename = "rb", skip_serializing_if = "Option::is_none")]
+    pub reprice_behavior: Option<RepriceBehavior>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum RepriceBehavior {
+    /// Reprice the order to the best bid/ask if it would otherwise be a taker.
+    #[serde(rename = "rej")]
+    Reject,
+    /// Reject the order if it would otherwise be a taker.
+    #[serde(rename = "bo")]
+    BestOffer,
+    #[serde(rename = "tbl")]
+    TopOfBookLimit,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
