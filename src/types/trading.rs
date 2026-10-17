@@ -246,12 +246,13 @@ pub struct PlaceOrder {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RepriceBehavior {
-    /// Reprice the order to the best bid/ask if it would otherwise be a taker.
+    /// Reject the order if it would otherwise be a taker.
     #[serde(rename = "rej")]
     Reject,
-    /// Reject the order if it would otherwise be a taker.
+    /// Reprice the order to the best bid/ask if it would otherwise be a taker.
     #[serde(rename = "bo")]
     BestOffer,
+    /// Cap the order at the top of the book if it would otherwise be a taker.
     #[serde(rename = "tbl")]
     TopOfBookLimit,
 }
