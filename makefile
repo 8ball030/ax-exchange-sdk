@@ -8,7 +8,7 @@ PATCH_VERSION := $(shell \
 
 NEW_VERSION ?= $(PATCH_VERSION)
 
-.PHONY: version tag release
+.PHONY: audit version tag release
 
 version:
 	@echo "Current version: $(VERSION)"
@@ -37,6 +37,9 @@ release: version package tag
 	## necessary to publish to crates.io, Currently disabled to avoid accidental publish
 	# @echo "Creating crate release v$(NEW_VERSION)"
 	# @cargo publish
+
+audit:
+	cargo audit
 
 lint: 
 	cargo clippy --benches --examples --tests -- -D warnings 
