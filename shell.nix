@@ -5,5 +5,7 @@ pkgs.mkShell {
   packages = with pkgs; [
     # rustup alone, so rust-toolchain.toml picks the compiler
     rustup
+    cargo-audit
+    cargo
   ];
 }
