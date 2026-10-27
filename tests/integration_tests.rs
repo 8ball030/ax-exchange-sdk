@@ -89,6 +89,7 @@ async fn test_order_life_cycle() -> Result<()> {
             clord_id: None,
             self_trade_prevention: SelfTradeBehavior::CancelBoth,
             account_id: None, // use default account
+            reprice_behavior: None,
         };
 
         let res = order_ws.place_order(place_order).await?;
