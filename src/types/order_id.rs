@@ -64,13 +64,13 @@ impl OrderId {
 
     /// Generate a new regular order ID (O-<ULID>)
     pub fn generate_regular() -> Self {
-        let ulid = ulid::Ulid::new();
+        let ulid = ulid::Ulid::generate();
         Self(format!("{}{}", REGULAR_PREFIX, ulid))
     }
 
     /// Generate a new liquidation order ID (L-<ULID>)
     pub fn generate_liquidation() -> Self {
-        let ulid = ulid::Ulid::new();
+        let ulid = ulid::Ulid::generate();
         Self(format!("{}{}", LIQUIDATION_PREFIX, ulid))
     }
 
@@ -158,14 +158,14 @@ mod tests {
     #[test]
     fn test_validation() {
         // Valid regular order ID
-        let regular_ulid = ulid::Ulid::new();
+        let regular_ulid = ulid::Ulid::generate();
         let regular_id = format!("O-{}", regular_ulid);
         let order_id = OrderId::new(regular_id.clone()).unwrap();
         assert_eq!(order_id.as_str(), regular_id);
         assert!(order_id.is_regular());
 
         // Valid liquidation order ID
-        let liq_ulid = ulid::Ulid::new();
+        let liq_ulid = ulid::Ulid::generate();
         let liq_id = format!("L-{}", liq_ulid);
         let order_id = OrderId::new(liq_id.clone()).unwrap();
         assert_eq!(order_id.as_str(), liq_id);
