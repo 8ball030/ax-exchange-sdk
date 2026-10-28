@@ -1,5 +1,6 @@
 use crate::marketdata::MarketdataWsClient;
 use crate::order_gateway::*;
+use crate::types::Secret;
 use crate::types::ws::TokenRefreshFn;
 use crate::{api_gateway::ApiGatewayRestClient, environment::Environment};
 use anyhow::{Result, anyhow};
@@ -17,7 +18,7 @@ pub struct ArchitectX {
     api_gateway_base_url: Url,
     order_gateway_base_url: Url,
     api_key: Option<String>,
-    api_secret: Option<String>,
+    api_secret: Option<Secret>,
     user_token: Arc<ArcSwapOption<(ArcStr, DateTime<Utc>)>>,
 }
 
@@ -33,7 +34,7 @@ impl ArchitectX {
             api_gateway_base_url: base_url.join("api/")?,
             order_gateway_base_url: base_url.join("orders/")?,
             api_key: api_key.map(|k| k.as_ref().to_string()),
-            api_secret: api_secret.map(|s| s.as_ref().to_string()),
+            api_secret: api_secret.map(|s| Secret::from(s.as_ref())),
             user_token: Arc::new(ArcSwapOption::const_empty()),
         })
     }
@@ -68,7 +69,7 @@ impl ArchitectX {
         use crate::protocol::api_gateway::{AuthenticateRequest, AuthenticationMethod};
         let auth = AuthenticationMethod::ApiKeySecret {
             api_key: api_key.into(),
-            api_secret: api_secret.into(),
+            api_secret: Secret::from(api_secret.into()),
         };
         let client = ApiGatewayRestClient::new(self.api_gateway_base_url.clone())?;
         let res = client
@@ -93,7 +94,7 @@ impl ArchitectX {
         use crate::protocol::api_gateway::{AuthenticateRequest, AuthenticationMethod};
         let auth = AuthenticationMethod::UsernamePassword {
             username: username.as_ref().to_string(),
-            password: password.as_ref().to_string(),
+            password: Secret::from(password.as_ref()),
             totp: totp.map(|t| t.as_ref().to_string()),
         };
         let client = ApiGatewayRestClient::new(self.api_gateway_base_url.clone())?;
@@ -128,7 +129,7 @@ impl ArchitectX {
             .api_secret
             .as_ref()
             .ok_or_else(|| anyhow!("no secret provided"))?;
-        self.authenticate(api_key, api_secret).await
+        self.authenticate(api_key, api_secret.expose_secret()).await
     }
 
     pub async fn api_gateway(&self) -> Result<ApiGatewayRestClient> {

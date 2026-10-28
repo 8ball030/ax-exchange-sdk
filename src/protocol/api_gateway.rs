@@ -5,7 +5,7 @@ use crate::{
         marketdata_publisher::{Ticker, Trade},
         pagination::{TimeseriesPage, TimeseriesPagination},
     },
-    types::{ApiKeyType, BboCandle, Candle, Instrument, Token},
+    types::{ApiKeyType, BboCandle, Candle, Instrument, Secret, Token},
 };
 use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use rust_decimal::Decimal;
@@ -17,7 +17,7 @@ use std::collections::HashMap;
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct ChangePasswordRequest {
     pub username: String,
-    pub password: String,
+    pub password: Secret,
     /// Optional 2FA code, if 2FA is enabled/required for the user.
     pub totp: Option<String>,
 }
@@ -32,7 +32,7 @@ pub struct ChangePasswordResponse {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct ResetPasswordRequest {
     pub username: String,
-    pub new_password: String,
+    pub new_password: Secret,
     pub password_reset_code: String,
 }
 
@@ -44,7 +44,7 @@ pub struct ResetPasswordResponse {}
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct CreateApiKeyRequest {
     pub username: String,
-    pub password: String,
+    pub password: Secret,
     /// Optional 2FA code, if 2FA is enabled/required for the user.
     pub totp: Option<String>,
     #[serde(default)]
@@ -57,7 +57,7 @@ pub struct CreateApiKeyRequest {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct CreateApiKeyResponse {
     pub api_key: String,
-    pub api_secret: String,
+    pub api_secret: Secret,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -91,7 +91,7 @@ pub struct RevokeApiKeyResponse {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct UpdateApiKeyAllowedIpsRequest {
     pub api_key: String,
-    pub password: String,
+    pub password: Secret,
     pub totp: Option<String>,
     #[serde(default)]
     pub allowed_ips: Vec<String>,
@@ -123,13 +123,13 @@ pub struct AuthenticateRequest {
 pub enum AuthenticationMethod {
     UsernamePassword {
         username: String,
-        password: String,
+        password: Secret,
         /// Optional 2FA code, if 2FA is enabled/required for the user.
         totp: Option<String>,
     },
     ApiKeySecret {
         api_key: String,
-        api_secret: String,
+        api_secret: Secret,
     },
 }
 
@@ -470,7 +470,7 @@ pub struct Setup2faResponse {
     /// This URI encodes all TOTP parameters and is typically displayed
     /// as a QR code for client apps to scan.
     pub uri: String,
-    pub secret: String,
+    pub secret: Secret,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -675,7 +675,7 @@ mod tests {
             AuthenticateRequest {
                 auth: AuthenticationMethod::UsernamePassword {
                     username: "testuser".to_string(),
-                    password: "password".to_string(),
+                    password: "password".into(),
                     totp: None,
                 },
                 expiration_seconds: 3600,
@@ -695,7 +695,7 @@ mod tests {
             AuthenticateRequest {
                 auth: AuthenticationMethod::ApiKeySecret {
                     api_key: "testapikey".to_string(),
-                    api_secret: "testsecret".to_string(),
+                    api_secret: "testsecret".into(),
                 },
                 expiration_seconds: 3600,
             }
@@ -934,7 +934,7 @@ pub struct GetAccountEquityHistoryResponse {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct SignupRequest {
     pub username: String,
-    pub password: String,
+    pub password: Secret,
     pub invite_code: String,
 }
 

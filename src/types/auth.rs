@@ -6,6 +6,7 @@ use chrono::{DateTime, Utc};
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroizing;
 
 lazy_static! {
     /// Regex for validating username format - alphanumeric, underscore, @, ., +, -
@@ -83,6 +84,36 @@ impl From<String> for Username {
 impl From<&str> for Username {
     fn from(s: &str) -> Self {
         Self(s.to_string())
+    }
+}
+
+/// A credential that is wiped from memory on drop and redacted from `Debug` (N-96).
+#[derive(Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema), schema(value_type = String))]
+pub struct Secret(Zeroizing<String>);
+
+impl Secret {
+    pub fn expose_secret(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for Secret {
+    fn from(s: String) -> Self {
+        Self(Zeroizing::new(s))
+    }
+}
+
+impl From<&str> for Secret {
+    fn from(s: &str) -> Self {
+        Self::from(s.to_string())
+    }
+}
+
+impl std::fmt::Debug for Secret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Secret([REDACTED])")
     }
 }
 
