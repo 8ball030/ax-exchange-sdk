@@ -11,11 +11,11 @@ pub enum Environment {
     Custom(String),
 }
 impl Environment {
-    pub fn base_url(&self) -> Url {
+    pub fn base_url(&self) -> Result<Url, url::ParseError> {
         match self {
-            Environment::Production => Url::parse(DEFAULT_BASE_URL).unwrap(),
-            Environment::Sandbox => Url::parse(SANDBOX_BASE_URL).unwrap(),
-            Environment::Custom(url) => Url::parse(url).unwrap(),
+            Environment::Production => Url::parse(DEFAULT_BASE_URL),
+            Environment::Sandbox => Url::parse(SANDBOX_BASE_URL),
+            Environment::Custom(url) => Url::parse(url),
         }
     }
 }

@@ -27,7 +27,7 @@ impl ArchitectX {
         api_key: Option<impl AsRef<str>>,
         api_secret: Option<impl AsRef<str>>,
     ) -> Result<Self> {
-        let base_url = environment.base_url();
+        let base_url = environment.base_url()?;
         Ok(Self {
             base_url: base_url.clone(),
             api_gateway_base_url: base_url.join("api/")?,
