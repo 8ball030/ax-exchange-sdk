@@ -105,7 +105,7 @@ dependencies = [
 
 [[package]]
 name = "ax-exchange-sdk"
-version = "14.2.16"
+version = "14.2.17"
 dependencies = [
  "anyhow",
  "arc-swap",
